@@ -18,6 +18,16 @@ $totalStockValue = 0;
 foreach ($allItems as $item) {
     $totalStockValue += $item['stok_saat_ini'] * ($item['harga_beli'] ?? 0);
 }
+
+// ---------- PAGINATION (server-side) ----------
+$perPage = 10;
+$totalPages = max(1, ceil($totalItems / $perPage));
+$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+if ($page > $totalPages) $page = $totalPages;
+
+$startIndex = ($page - 1) * $perPage;
+$itemsToShow = array_slice($allItems, $startIndex, $perPage);
+// ------------------------------------------------
 ?>
 <!doctype html>
 <html lang="id">
@@ -350,6 +360,67 @@ foreach ($allItems as $item) {
     body.dark-mode .card-table .table th {
       border-color: rgba(255,255,255,0.03) !important;
     }
+    /* Pagination: flat pill style (works light/dark) */
+.pagination {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  background: transparent; /* remove box */
+  border-radius: 10px;
+  box-shadow: none;
+  align-items: center;
+}
+
+/* links */
+.pagination .page-link {
+  border: 1px solid rgba(0,0,0,0.06);
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  border-radius: 8px;
+  min-width: 36px;
+  text-align: center;
+}
+
+/* disabled */
+.pagination .page-item.disabled .page-link {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* hover (light) */
+.pagination .page-link:hover {
+  background: rgba(0,0,0,0.04);
+  color: inherit;
+}
+
+/* active pill using accent colors */
+.pagination .page-item.active .page-link {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff !important;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* small dots/ellipsis */
+.pagination .page-item.disabled .page-link {
+  background: transparent;
+  border: none;
+}
+
+/* Dark mode overrides */
+body.dark-mode .pagination .page-link {
+  border: 1px solid rgba(255,255,255,0.04);
+  color: #9aa0b4;
+}
+body.dark-mode .pagination .page-link:hover {
+  background: rgba(255,255,255,0.03);
+}
+body.dark-mode .pagination .page-item.active .page-link {
+  /* keep the same accent gradient already readable in dark mode */
+  color: #fff !important;
+}
+
 
   </style>
 </head>
@@ -475,7 +546,7 @@ foreach ($allItems as $item) {
                   <?php if (empty($allItems)): ?>
                     <tr><td colspan="6" class="text-center py-4 text-muted">Belum ada data bahan.</td></tr>
                   <?php else: ?>
-                    <?php foreach ($allItems as $item): ?>
+                    <?php foreach ($itemsToShow as $item): ?>
                       <tr>
                         <td class="col-kode"><?= htmlspecialchars($item['kode_bahan'], ENT_QUOTES) ?></td>
                         <td class="col-nama"><?= htmlspecialchars($item['nama_bahan'], ENT_QUOTES) ?></td>
@@ -501,6 +572,46 @@ foreach ($allItems as $item) {
                   <?php endif; ?>
                 </tbody>
               </table>
+
+              <!-- PAGINATION UI (server-side) -->
+              <?php if ($totalPages > 1): ?>
+              <div class="d-flex justify-content-center py-3">
+                  <nav>
+                      <ul class="pagination mb-0">
+                          <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                              <a class="page-link" href="?page=<?= $page - 1 ?>">&laquo;</a>
+                          </li>
+
+                          <?php
+                          // show limited page range for long lists (optional small improvement)
+                          $range = 3; // pages around current
+                          $start = max(1, $page - $range);
+                          $end = min($totalPages, $page + $range);
+                          if ($start > 1) {
+                              echo '<li class="page-item"><a class="page-link" href="?page=1">1</a></li>';
+                              if ($start > 2) echo '<li class="page-item disabled"><span class="page-link">…</span></li>';
+                          }
+                          for ($i = $start; $i <= $end; $i++):
+                          ?>
+                              <li class="page-item <?= $i == $page ? 'active' : '' ?>">
+                                  <a class="page-link" href="?page=<?= $i ?>"><?= $i ?></a>
+                              </li>
+                          <?php endfor;
+                          if ($end < $totalPages) {
+                              if ($end < $totalPages - 1) echo '<li class="page-item disabled"><span class="page-link">…</span></li>';
+                              echo '<li class="page-item"><a class="page-link" href="?page=' . $totalPages . '">' . $totalPages . '</a></li>';
+                          }
+                          ?>
+
+                          <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+                              <a class="page-link" href="?page=<?= $page + 1 ?>">&raquo;</a>
+                          </li>
+                      </ul>
+                  </nav>
+              </div>
+              <?php endif; ?>
+              <!-- END PAGINATION -->
+
             </div>
           </div>
         </div>
