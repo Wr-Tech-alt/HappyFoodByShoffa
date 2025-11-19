@@ -541,10 +541,10 @@ body.dark-mode input[type="date"] {
             <button id="btnCollapseInline" class="collapse-inline" aria-label="Toggle sidebar" title="Toggle sidebar">
               <i class="bi bi-list" style="font-size:18px;"></i>
             </button>
-            <div class="search-box">
+            <!-- <div class="search-box">
               <i class="bi bi-search search-icon" aria-hidden="true"></i>
               <input type="search" placeholder="Search... (tekan '/' untuk fokus)" id="searchInput" />
-            </div>
+            </div> -->
           </div>
           <div class="userbox">
             <div style="text-align:right">
