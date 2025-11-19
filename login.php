@@ -1,7 +1,4 @@
 <?php
-// login.php
-// PENTING: jangan ada karakter/space/line sebelum tag <?php di file ini.
-
 ob_start();
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -45,7 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Tentukan active tab: POST => login, else bisa dikontrol lewat ?tab=about
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $active_tab = 'login';
 } else {
@@ -93,9 +89,8 @@ ob_end_flush();
             padding:48px 18px 72px;
         }
 
-        /* RAMPING: container lebih sempit */
         .login-container{
-            width:820px; /* dipersempit dari 960 -> 820 */
+            width:820px; 
             max-width:calc(100% - 48px);
             height:640px;
             border-radius:18px;
@@ -105,7 +100,6 @@ ob_end_flush();
             background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
         }
 
-        /* kiri / kanan 50% - 50% */
         .login-left{
             width:50%;
             min-width:360px;
@@ -166,7 +160,6 @@ ob_end_flush();
             color:var(--white);
         }
 
-        /* tombol diturunkan agar ada space */
         .form-actions{
             margin-top:32px;
             margin-bottom:16px;
@@ -187,7 +180,6 @@ ob_end_flush();
         .minor{ font-size:12px; color:#bfc0db; }
         .left-footer{ margin-top:6px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
 
-        /* RIGHT: gambar center agar tidak melebar / fokus proporsional */
         .login-right{
             width:50%;
             background: url('assets/cake2.jpeg') center center / cover no-repeat;
@@ -218,7 +210,6 @@ ob_end_flush();
 
         .login-container{ border-radius:22px; }
 
-        /* responsive */
         @media (max-width:920px){
             .login-container{ width:760px; height:600px; }
         }
@@ -305,7 +296,7 @@ ob_end_flush();
 
                                 <p>Suspendisse potenti. Phasellus euismod libero in neque molestie et elementum lorem facilisis. Cras ultricies ligula sed magna dictum porta. Curabitur non nulla sit amet nisl tempus convallis quis ac lectus.</p>
 
-                                <p class="minor">Versi: <strong>0.1 (demo)</strong> &nbsp;•&nbsp; Developer: Tim Internal</p>
+                                <p class="minor">Versi: <strong>0.1 (demo)</strong> &nbsp;•&nbsp; Developer: Tim Outsource</p>
                             </div>
                         </div>
                     </div>

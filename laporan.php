@@ -619,7 +619,7 @@ body.dark-mode input[type="date"] {
             </div>
             <div class="icon"><i class="bi bi-arrow-down-circle"></i></div>
           </div>
-          <div class="stat yellow">
+          <div class="stat red">
             <div>
               <div class="meta">Total Stok Keluar</div>
               <div class="value">
