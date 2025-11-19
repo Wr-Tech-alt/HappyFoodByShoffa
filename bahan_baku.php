@@ -563,6 +563,12 @@ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
         new bootstrap.Modal(document.getElementById('modalEdit')).show();
     }
 
+    // helper: cari item berdasarkan id lalu panggil editItem
+    function editItemById(id) {
+      const it = itemsData.find(i => parseInt(i.id,10) === parseInt(id,10));
+      if (it) editItem(it);
+    }
+
     function deleteItem(id) {
         if (confirm('Apakah Anda yakin ingin menghapus item ini?')) {
             document.getElementById('delete_id').value = id;
@@ -570,42 +576,92 @@ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
         }
     }
 
-    // Search filter (works with table)
+    // ====== GLOBAL SEARCH (search across all pages) ======
     (function(){
       const input = document.getElementById('searchInput');
       const tbody = document.getElementById('stockTbody');
 
+      if (!input || !tbody) return;
+
       function normalize(s){ return String(s || '').toLowerCase().trim(); }
 
-      function filterRows(q){
-        const query = normalize(q);
-        const rows = tbody.querySelectorAll('tr');
-        rows.forEach(row => {
-          const kode = normalize(row.querySelector('.col-kode')?.textContent);
-          const nama = normalize(row.querySelector('.col-nama')?.textContent);
-          const satuan = normalize(row.querySelector('.col-satuan')?.textContent);
-          const stok = normalize(row.querySelector('.col-stok')?.textContent);
-          const restok = normalize(row.querySelector('.col-restok')?.textContent);
-          const status = normalize(row.querySelector('.col-status')?.textContent);
-          const aksi = normalize(row.querySelector('.col-aksi')?.textContent);
-          const haystack = [kode, nama, satuan, stok, restok, status, aksi].join(' ');
-          const match = query === '' || haystack.indexOf(query) !== -1;
-          row.style.display = match ? '' : 'none';
+      function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function renderRows(list) {
+        if (!Array.isArray(list) || list.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">Tidak ada hasil pencarian.</td></tr>';
+          return;
+        }
+
+        const rows = list.map(item => {
+          const harga = (item.harga_beli !== undefined && item.harga_beli !== null && item.harga_beli !== '') ? 'Rp ' + Number(item.harga_beli).toLocaleString('id-ID') : '-';
+          const status = (parseFloat(item.stok_saat_ini) <= parseFloat(item.level_restok)) ? '<span class="badge bg-danger">Rendah</span>' : '<span class="badge bg-success">Aman</span>';
+
+          return `<tr>
+            <td class="col-kode">${escapeHtml(item.kode_bahan)}</td>
+            <td class="col-nama">${escapeHtml(item.nama_bahan)}</td>
+            <td class="col-satuan">${escapeHtml(item.satuan)}</td>
+            <td class="col-stok">${escapeHtml(item.stok_saat_ini)}</td>
+            <td class="col-restok">${escapeHtml(item.level_restok)}</td>
+            <td class="col-harga">${harga}</td>
+            <td class="col-status">${status}</td>
+            <td class="text-end col-aksi">
+              <button class="btn btn-sm btn-primary" onclick="editItemById(${parseInt(item.id,10)})"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-danger" onclick="deleteItem(${parseInt(item.id,10)})"><i class="bi bi-trash"></i></button>
+            </td>
+          </tr>`;
+        }).join('');
+
+        tbody.innerHTML = rows;
+      }
+
+      function searchAll(q) {
+        const qn = normalize(q);
+        if (qn === '') return [];
+
+        return itemsData.filter(item => {
+          const hay = [
+            item.kode_bahan, item.nama_bahan, item.satuan,
+            item.stok_saat_ini, item.level_restok, item.harga_beli,
+            item.keterangan
+          ].map(x => normalize(x)).join(' ');
+          return hay.indexOf(qn) !== -1;
         });
       }
 
-      if (input) {
-        input.addEventListener('input', (e)=>{ filterRows(e.target.value); });
+      // ketika user mengetik: jika kosong -> reload (kembalikan pagination server-side)
+      input.addEventListener('input', (e) => {
+        const q = (e.target.value || '').trim();
+        if (q === '') {
+          // kembalikan tampilan paginasi server-side
+          // Reload aman karena perubahan CRUD sudah disubmit via POST sebelumnya
+          window.location.reload();
+          return;
+        }
 
-        document.addEventListener('keydown', (e) => {
-          if (e.key === '/' && document.activeElement !== input) {
-            e.preventDefault();
-            input.focus();
-            input.select();
-          }
-        });
-      }
+        const matches = searchAll(q);
+        renderRows(matches);
+      });
+
+      // shortcut '/' untuk fokus
+      document.addEventListener('keydown', (e) => {
+        if (e.key === '/' && document.activeElement !== input) {
+          e.preventDefault();
+          input.focus();
+          input.select();
+        }
+      });
+
     })();
+    // ====== END GLOBAL SEARCH ======
 
     // Sidebar collapse: persist state, icons-only strip (same behavior as index)
     (function(){

@@ -670,31 +670,76 @@ body.dark-mode .pagination .page-item.active .page-link {
       }
     }
 
-    // Search filter
+    // ===== GLOBAL SEARCH (search across all pages) =====
     (function(){
       const input = document.getElementById('searchInput');
       const tbody = document.getElementById('stockTbody');
+      if (!input || !tbody) return;
 
       function normalize(s){ return String(s || '').toLowerCase().trim(); }
 
-      function filterRows(q){
-        const query = normalize(q);
-        const rows = tbody.querySelectorAll('tr');
-        rows.forEach(row => {
-          const kode = normalize(row.querySelector('.col-kode')?.textContent);
-          const nama = normalize(row.querySelector('.col-nama')?.textContent);
-          const stok = normalize(row.querySelector('.col-stok')?.textContent);
-          const restok = normalize(row.querySelector('.col-restok')?.textContent);
-          const status = normalize(row.querySelector('.col-status')?.textContent);
-          const aksi = normalize(row.querySelector('.col-aksi')?.textContent);
-          const haystack = [kode, nama, stok, restok, status, aksi].join(' ');
-          const match = query === '' || haystack.indexOf(query) !== -1;
-          row.style.display = match ? '' : 'none';
+      function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function renderRows(list) {
+        if (!Array.isArray(list) || list.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">Tidak ada hasil pencarian.</td></tr>';
+          return;
+        }
+
+        const rows = list.map(item => {
+          const status = (parseFloat(item.stok_saat_ini) <= parseFloat(item.level_restok)) ?
+                        '<span class="badge bg-danger">Rendah</span>' : '<span class="badge bg-success">Aman</span>';
+          const stok = escapeHtml(item.stok_saat_ini) + ' ' + escapeHtml(item.satuan || '');
+          const restok = escapeHtml(item.level_restok) + ' ' + escapeHtml(item.satuan || '');
+
+          return `<tr>
+            <td class="col-kode">${escapeHtml(item.kode_bahan)}</td>
+            <td class="col-nama">${escapeHtml(item.nama_bahan)}</td>
+            <td class="col-stok">${stok}</td>
+            <td class="col-restok">${restok}</td>
+            <td class="col-status">${status}</td>
+            <td class="text-end col-aksi">
+              <button class="btn btn-sm btn-success btn-sm-custom" onclick="stokMasuk(${parseInt(item.id,10)})"><i class="bi bi-plus-circle"></i> Masuk</button>
+              <button class="btn btn-sm btn-warning btn-sm-custom" onclick="stokKeluar(${parseInt(item.id,10)})"><i class="bi bi-dash-circle"></i> Keluar</button>
+            </td>
+          </tr>`;
+        }).join('');
+        tbody.innerHTML = rows;
+      }
+
+      function searchAll(q) {
+        const qn = normalize(q);
+        if (qn === '') return [];
+        return itemsData.filter(item => {
+          const hay = [
+            item.kode_bahan, item.nama_bahan, item.satuan,
+            item.stok_saat_ini, item.level_restok, item.harga_beli,
+            item.keterangan
+          ].map(x => normalize(x)).join(' ');
+          return hay.indexOf(qn) !== -1;
         });
       }
 
-      input.addEventListener('input', (e)=>{ filterRows(e.target.value); });
+      input.addEventListener('input', (e) => {
+        const q = (e.target.value || '').trim();
+        if (q === '') {
+          // kembali ke pagination server-side
+          window.location.reload();
+          return;
+        }
+        const matches = searchAll(q);
+        renderRows(matches);
+      });
 
+      // shortcut '/'
       document.addEventListener('keydown', (e) => {
         if (e.key === '/' && document.activeElement !== input) {
           e.preventDefault();
@@ -702,7 +747,9 @@ body.dark-mode .pagination .page-item.active .page-link {
           input.select();
         }
       });
+
     })();
+    // ===== END GLOBAL SEARCH =====
 
     // Sidebar collapse: persist state, icons-only strip
     (function(){
