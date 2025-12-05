@@ -197,7 +197,6 @@ body.dark-mode .form-control::placeholder {
 
 body.dark-mode .btn-primary, 
 body.dark-mode .btn-secondary {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff !important;
   border: none;
 }
