@@ -13,7 +13,8 @@ if (!isset($_SESSION['user_id'])) {
  $db = $database->connect();
 
 if ($db) {
-    $sql = "SELECT id, kode_kue, nama_kue FROM kue ORDER BY nama_kue ASC";
+    // --- PERUBAHAN 1: Query sekarang mengambil kolom deskripsi, foto, dan harga_jual ---
+    $sql = "SELECT id, kode_kue, nama_kue, deskripsi, foto, harga_jual FROM kue ORDER BY nama_kue ASC";
     
     $stmt = $db->prepare($sql);
     $stmt->execute();
@@ -22,7 +23,6 @@ if ($db) {
 
     // Loop untuk mengambil resep setiap kue
     foreach ($cakes_data as $index => $cake) {
-        // PERBAIKAN: ganti 'satuans' menjadi 'satuan'
         $resep_sql = "SELECT rk.bahan_id, rk.qty_per_pcs, rk.satuan, bb.nama_bahan 
                       FROM resep_kue rk 
                       JOIN bahan_baku bb ON rk.bahan_id = bb.id 
@@ -51,7 +51,7 @@ if ($db) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
 
     <style>
-      /* ... (Saya akan menyalin seluruh CSS Anda di sini) ... */
+      /* ... (CSS tidak berubah, saya akan menyalinnya utuh) ... */
       :root{
         --accent:#6f42c1;
         --accent-2:#7c4dff;
@@ -587,22 +587,25 @@ if ($db) {
                             <div class="text-muted" style="font-size:14px;">Belum ada data kue. Tambahkan kue pertama kamu dengan tombol <b>Tambah Kue</b>.</div>
                         <?php else: ?>
                             <?php foreach ($cakes as $cake): 
-                                // --- PERBAIKAN: Beri nilai default untuk data yang tidak ada ---
-                                $harga = 'Rp -'; // Default karena kolom harga_jual tidak ada
-                                $gambar = 'assets/cake-placeholder.png'; // Default karena kolom foto tidak ada
-                                $deskripsi_tampil = 'Belum ada deskripsi.'; // Default karena kolom deskripsi tidak ada
+                                // --- PERUBAHAN 2: Variabel sekarang mengambil dari database, dengan nilai default jika kosong ---
+                                $harga = is_numeric($cake['harga_jual']) ? number_format($cake['harga_jual'],0,',','.') : 'Rp -';
+                                $gambar = !empty($cake['foto']) ? 'uploads/kue/' . $cake['foto'] : 'assets/cake-placeholder.png';
+                                $deskripsi_tampil = $cake['deskripsi'] ?: 'Belum ada deskripsi.';
                             ?>
                             <article class="cake-card" 
                                      data-name="<?= htmlspecialchars(mb_strtolower($cake['nama_kue']), ENT_QUOTES) ?>"> 
                                 <div class="cake-thumb-wrap">
                                     <img src="<?= htmlspecialchars($gambar, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($cake['nama_kue'], ENT_QUOTES) ?>">
+                                    <?php if (!empty($cake['deskripsi']) && stripos($cake['deskripsi'], 'best') !== false): ?>
+                                      <div class="badge-best"><i class="bi bi-heart-fill"></i> Best Seller</div>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="mt-2">
                                     <div class="cake-info-title">
                                         <div>
                                             <div class="cake-name"><?= htmlspecialchars($cake['nama_kue'], ENT_QUOTES) ?></div>
                                         </div>
-                                        <div class="cake-price"><?= $harga ?></div>
+                                        <div class="cake-price">Rp <?= $harga ?></div>
                                     </div>
                                     <div class="cake-desc">
                                         <?= htmlspecialchars($deskripsi_tampil, ENT_QUOTES) ?>
@@ -806,7 +809,8 @@ if ($db) {
                     detailResepEl.innerHTML = '<h6>Resep yang akan digunakan:</h6><ul>';
                     
                     data.resep.forEach(item => {
-                        detailResepEl.innerHTML += `<li>${item.nama_bahan}: ${item.qty_per_pcs} ${item.satuans} per kue</li>`;
+                        // --- PERUBAHAN 3: Sesuaikan dengan nama kolom 'satuan' ---
+                        detailResepEl.innerHTML += `<li>${item.nama_bahan}: ${item.qty_per_pcs} ${item.satuan} per kue</li>`;
                     });
                     
                     detailResepEl.innerHTML += '</ul>';
