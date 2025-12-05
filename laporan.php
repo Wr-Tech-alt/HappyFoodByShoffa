@@ -509,10 +509,14 @@ body.dark-mode input[type="date"] {
             <small>Inventory System</small>
           </div>
         </div>
-        <nav class="nav-vertical" aria-label="Main navigation">
+         <nav class="nav-vertical" aria-label="Main navigation">
           <a href="index.php" title="Dashboard"><i class="bi bi-speedometer2"></i><span class="label">Dashboard</span></a>
           <a href="bahan_baku.php" title="Bahan Baku"><i class="bi bi-box-seam"></i><span class="label">Bahan Baku</span></a>
           <a href="laporan.php" class="active" title="Laporan Stok"><i class="bi bi-file-earmark-text"></i><span class="label">Laporan Stok</span></a>
+          <a href="daftarkue.php" title="Daftar Kue">
+          <i class="bi bi-basket"></i>
+          <span class="label">Daftar Kue</span>
+          </a>
         </nav>
         <div class="tools" aria-hidden="false">
           <div class="tools-title">TOOLS</div>
