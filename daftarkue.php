@@ -8,7 +8,7 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-// --- LOGIKA UNTUK MENAMBAHKUE KUE BARU (AJAX) ---
+// --- LOGIKA UNTUK MENAMBAHKAN KUE BARU (AJAX) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_cake') {
     $database = new Database();
     $db = $database->connect();
@@ -41,22 +41,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        // --- SIMPAN DATA KE DATABASE ---
-        $sql = "INSERT INTO kue (kode_kue, nama_kue, deskripsi, foto, harga_jual) 
-                VALUES (:kode_kue, :nama_kue, :deskripsi, :foto, :harga_jual)";
-        
-        $stmt = $db->prepare($sql);
-        $stmt->bindParam(':kode_kue', $kode_kue);
-        $stmt->bindParam(':nama_kue', $nama_kue);
-        $stmt->bindParam(':deskripsi', $deskripsi);
-        $stmt->bindParam(':foto', $nama_foto);
-        $stmt->bindParam(':harga_jual', $harga_jual);
+        // Gunakan transaksi untuk memastikan kedua data (kue dan resep) tersimpan dengan baik
+        $db->beginTransaction();
 
-        if ($stmt->execute()) {
-            $response['success'] = true;
-            $response['message'] = 'Kue berhasil ditambahkan!';
-        } else {
-            $response['message'] = 'Gagal menyimpan data kue.';
+        try {
+            // --- SIMPAN DATA KUE KE DATABASE ---
+            $sql = "INSERT INTO kue (kode_kue, nama_kue, deskripsi, foto, harga_jual) 
+                    VALUES (:kode_kue, :nama_kue, :deskripsi, :foto, :harga_jual)";
+            
+            $stmt = $db->prepare($sql);
+            $stmt->bindParam(':kode_kue', $kode_kue);
+            $stmt->bindParam(':nama_kue', $nama_kue);
+            $stmt->bindParam(':deskripsi', $deskripsi);
+            $stmt->bindParam(':foto', $nama_foto);
+            $stmt->bindParam(':harga_jual', $harga_jual);
+
+            if ($stmt->execute()) {
+                // Dapatkan ID kue yang baru saja disimpan
+                $kue_id = $db->lastInsertId();
+
+                // --- SIMPAN DATA RESEP KE DATABASE ---
+                if (!empty($_POST['ingredients'])) {
+                    $resep_sql = "INSERT INTO resep_kue (kue_id, bahan_id, qty_per_pcs, satuan) 
+                                  VALUES (:kue_id, :bahan_id, :qty_per_pcs, :satuan)";
+                    $resep_stmt = $db->prepare($resep_sql);
+
+                    foreach ($_POST['ingredients'] as $bahan_id => $qty) {
+                        // Ambil satuan dari tabel bahan_baku
+                        $unit_sql = "SELECT satuan FROM bahan_baku WHERE id = :bahan_id";
+                        $unit_stmt = $db->prepare($unit_sql);
+                        $unit_stmt->bindParam(':bahan_id', $bahan_id);
+                        $unit_stmt->execute();
+                        $satuan = $unit_stmt->fetchColumn();
+
+                        // Pastikan quantity tidak kosong dan lebih dari 0
+                        if (!empty($qty) && is_numeric($qty) && $qty > 0) {
+                            $resep_stmt->bindParam(':kue_id', $kue_id);
+                            $resep_stmt->bindParam(':bahan_id', $bahan_id);
+                            $resep_stmt->bindParam(':qty_per_pcs', $qty);
+                            $resep_stmt->bindParam(':satuan', $satuan);
+                            $resep_stmt->execute();
+                        }
+                    }
+                }
+
+                // Jika semua berhasil, commit transaksi
+                $db->commit();
+                $response['success'] = true;
+                $response['message'] = 'Kue dan resep berhasil ditambahkan!';
+
+                // --- Ambil data kue baru untuk dikirim ke frontend ---
+                try {
+                    $new_cake_sql = "SELECT id, kode_kue, nama_kue, deskripsi, foto, harga_jual FROM kue WHERE id = :kue_id";
+                    $new_cake_stmt = $db->prepare($new_cake_sql);
+                    $new_cake_stmt->bindParam(':kue_id', $kue_id);
+                    $new_cake_stmt->execute();
+                    $new_cake = $new_cake_stmt->fetch(PDO::FETCH_ASSOC);
+
+                    if ($new_cake) {
+                        // Ambil resep untuk kue baru
+                        $resep_sql = "SELECT rk.bahan_id, rk.qty_per_pcs, rk.satuan, bb.nama_bahan 
+                                      FROM resep_kue rk 
+                                      JOIN bahan_baku bb ON rk.bahan_id = bb.id 
+                                      WHERE rk.kue_id = :kue_id";
+                        $resep_stmt = $db->prepare($resep_sql);
+                        $resep_stmt->bindParam(':kue_id', $kue_id);
+                        $resep_stmt->execute();
+                        $new_cake['resep'] = $resep_stmt->fetchAll(PDO::FETCH_ASSOC);
+                        
+                        // Tambahkan data kue lengkap ke respons
+                        $response['cake_data'] = $new_cake;
+                    }
+                } catch (PDOException $e) {
+                    // Tidak masalah jika ini gagal, kue tetap tersimpan. Kita hanya tidak bisa menambahkannya secara dinamis.
+                    error_log("Error fetching new cake data: " . $e->getMessage());
+                }
+
+            } else {
+                // Jika gagal menyimpan kue, rollback
+                $db->rollBack();
+                $response['message'] = 'Gagal menyimpan data kue.';
+            }
+        } catch (PDOException $e) {
+            // Jika terjadi error, rollback transaksi
+            $db->rollBack();
+            $response['message'] = 'Terjadi kesalahan database: ' . $e->getMessage();
         }
     }
 
@@ -64,7 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     echo json_encode($response);
     exit();
 }
-
 
 // --- LOGIKA UNTUK MENAMPILKAN DAFTAR KUE ---
  $cakes = [];
@@ -106,7 +174,7 @@ if ($db) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-      /* ... (CSS tidak berubah, saya akan menyalinnya utuh) ... */
+      /* ... (CSS tidak berubah) ... */
       :root{--accent:#6f42c1;--accent-2:#7c4dff;--muted:#6c757d;--page-bg:#f6f7fb;--card-bg:#ffffff;--sidebar-bg:#ffffff;--sidebar-ink:#2b2b3b;--soft-border:#eef0f4;}
       html,body{height:100%; min-height:100%; margin:0; font-family: "Inter", "Raleway", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--page-bg); color:#222;}
       body.dark-mode{--page-bg: #0f172a;--card-bg: #1a2334;--sidebar-bg: #1a2334;--sidebar-ink: #e6e9ff;--muted: #9aa0b4;--soft-border: rgba(255,255,255,0.06); background: var(--page-bg); color: #e6e9ff;}
@@ -274,7 +342,6 @@ if ($db) {
                             <h4>Koleksi Kue</h4>
                             <p>Lihat detail dan buat kue sesuai kebutuhan.</p>
                         </div>
-                        <!-- Tombol ini sekarang akan membuka modal, bukan redirect -->
                         <button class="btn-add-cake" data-bs-toggle="modal" data-bs-target="#tambahKueModal">
                             <i class="bi bi-plus-circle"></i>
                             Tambah Kue
@@ -336,7 +403,7 @@ if ($db) {
 
     <!-- Modal Tambah Kue -->
     <div class="modal fade" id="tambahKueModal" tabindex="-1" aria-labelledby="tambahKueModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="tambahKueModalLabel">Tambah Kue Baru</h5>
@@ -364,6 +431,11 @@ if ($db) {
                             <label for="foto" class="form-label">Foto Kue</label>
                             <input type="file" class="form-control" id="foto" name="foto" accept="image/*">
                             <div class="form-text">Pilih file gambar (JPG, PNG, GIF).</div>
+                        </div>
+                        <hr>
+                        <h5 class="mb-3">Resep Kue</h5>
+                        <div id="ingredientsList">
+                            <p class="text-muted">Memuat daftar bahan baku...</p>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -400,109 +472,289 @@ if ($db) {
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-      // Sidebar collapse
-      (function(){
-        const sidebar = document.getElementById('appSidebar');
-        const btn = document.getElementById('btnCollapseInline');
-        function setCollapsed(collapsed){ if (collapsed) sidebar.classList.add('collapsed'); else sidebar.classList.remove('collapsed'); localStorage.setItem('hf_sidebar_collapsed', collapsed ? '1' : '0'); }
-        const stored = localStorage.getItem('hf_sidebar_collapsed'); const initial = stored === '1'; setCollapsed(initial);
-        btn.addEventListener('click', () => { const isCollapsed = sidebar.classList.contains('collapsed'); setCollapsed(!isCollapsed); });
-        document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { const isCollapsed = sidebar.classList.contains('collapsed'); setCollapsed(!isCollapsed); } });
-      })();
+   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Tunggu hingga seluruh dokumen HTML dimuat
+document.addEventListener('DOMContentLoaded', function() {
 
-      // Appearance toggle
-      (function(){
-        const body = document.body; const switchEl = document.getElementById('appearanceSwitch');
-        function setState(isOn){ if (isOn) { switchEl.classList.add('on'); switchEl.setAttribute('aria-checked','true'); body.classList.add('dark-mode'); } else { switchEl.classList.remove('on'); switchEl.setAttribute('aria-checked','false'); body.classList.remove('dark-mode'); } localStorage.setItem('hf_appearance_dark', isOn ? '1' : '0'); }
-        const stored = localStorage.getItem('hf_appearance_dark'); const initialOn = stored === '1'; setState(initialOn);
-        switchEl.addEventListener('click', ()=> setState(!switchEl.classList.contains('on')));
-        switchEl.addEventListener('keydown', (e)=> { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setState(!switchEl.classList.contains('on')); } });
-      })();
+  // --- Fungsi Notifikasi ---
+  function showNotification(message, type = 'info') {
+      const notification = document.createElement('div');
+      notification.className = `alert alert-${type} position-fixed top-0 start-50 translate-middle-x mt-3`;
+      notification.style.zIndex = '9999';
+      notification.style.minWidth = '300px';
+      notification.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center">
+          <span>${message}</span>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+          notification.remove();
+      }, 3000);
+  }
 
-      // Client-side clock
-      (function(){
-        const el = document.getElementById('currentTime'); if (!el) return;
-        const fmt = new Intl.DateTimeFormat('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false });
-        function updateTime(){ el.textContent = fmt.format(new Date()).replace(',', ''); }
-        updateTime(); setInterval(updateTime, 15000);
-      })();
+  // --- Sidebar collapse ---
+  (function(){
+    const sidebar = document.getElementById('appSidebar');
+    const btn = document.getElementById('btnCollapseInline');
+    if (!sidebar || !btn) return;
+    function setCollapsed(collapsed){ if (collapsed) sidebar.classList.add('collapsed'); else sidebar.classList.remove('collapsed'); localStorage.setItem('hf_sidebar_collapsed', collapsed ? '1' : '0'); }
+    const stored = localStorage.getItem('hf_sidebar_collapsed'); const initial = stored === '1'; setCollapsed(initial);
+    btn.addEventListener('click', () => { const isCollapsed = sidebar.classList.contains('collapsed'); setCollapsed(!isCollapsed); });
+    document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { const isCollapsed = sidebar.classList.contains('collapsed'); setCollapsed(!isCollapsed); } });
+  })();
 
-      // Search untuk kartu kue
-      (function(){
-        const input = document.getElementById('searchInput');
-        const cards = Array.from(document.querySelectorAll('#cakeGrid .cake-card'));
-        const emptyState = document.createElement('div');
-        emptyState.className = 'text-muted'; emptyState.style.fontSize = '14px';
-        emptyState.textContent = 'Tidak ada kue yang cocok dengan kriteria pencarian.';
-        emptyState.style.display = 'none';
-        document.getElementById('cakeGrid').appendChild(emptyState);
-        function applySearch() {
-          const q = (input.value || '').toLowerCase().trim(); let visibleCount = 0;
-          cards.forEach(card => { const name = (card.dataset.name || '').toLowerCase(); const matchName = q === '' || name.indexOf(q) !== -1; if (matchName) { card.style.display = ''; visibleCount++; } else { card.style.display = 'none'; } });
-          emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
-        }
-        if (input) { input.addEventListener('input', applySearch); document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); input.select(); } }); }
-      })();
+  // --- Appearance toggle ---
+  (function(){
+    const body = document.body; const switchEl = document.getElementById('appearanceSwitch');
+    if (!switchEl) return;
+    function setState(isOn){ if (isOn) { switchEl.classList.add('on'); switchEl.setAttribute('aria-checked','true'); body.classList.add('dark-mode'); } else { switchEl.classList.remove('on'); switchEl.setAttribute('aria-checked','false'); body.classList.remove('dark-mode'); } localStorage.setItem('hf_appearance_dark', isOn ? '1' : '0'); }
+    const stored = localStorage.getItem('hf_appearance_dark'); const initialOn = stored === '1'; setState(initialOn);
+    switchEl.addEventListener('click', ()=> setState(!switchEl.classList.contains('on')));
+    switchEl.addEventListener('keydown', (e)=> { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setState(!switchEl.classList.contains('on')); } });
+  })();
 
-      // --- SKRIPT UNTUK MODAL TAMBAH KUE ---
-      const formTambahKue = document.getElementById('formTambahKue');
-      formTambahKue.addEventListener('submit', function(e) {
-          e.preventDefault();
-          const submitBtn = formTambahKue.querySelector('button[type="submit"]');
-          submitBtn.disabled = true;
-          submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Menyimpan...';
-          const formData = new FormData(formTambahKue);
-          formData.append('action', 'add_cake');
-          fetch('daftarkue.php', {
-              method: 'POST',
-              body: formData
-          })
-          .then(response => response.json())
-          .then(data => {
-              if (data.success) {
-                  const modal = bootstrap.Modal.getInstance(document.getElementById('tambahKueModal'));
-                  modal.hide();
-                  alert(data.message);
-                  window.location.reload();
-              } else {
-                  alert('Gagal menambah kue: ' + data.message);
-              }
-          })
-          .catch(error => {
-              console.error('Error:', error);
-              alert('Terjadi kesalahan saat menambah kue.');
-          })
-          .finally(() => {
-              submitBtn.disabled = false;
-              submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Simpan Kue';
-          });
-      });
+  // --- Client-side clock ---
+  (function(){
+    const el = document.getElementById('currentTime'); if (!el) return;
+    const fmt = new Intl.DateTimeFormat('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false });
+    function updateTime(){ el.textContent = fmt.format(new Date()).replace(',', ''); }
+    updateTime(); setInterval(updateTime, 15000);
+  })();
 
-      let currentCakeId = null;
-      function showBuatKueModal(cakeId, namaKue) {
-        currentCakeId = cakeId;
-        fetch(`get_resep_kue.php?id=${cakeId}`).then(response => response.json()).then(data => {
+  // --- Search untuk kartu kue ---
+  (function(){
+    const input = document.getElementById('searchInput');
+    const cakeGrid = document.getElementById('cakeGrid');
+    if (!input || !cakeGrid) return;
+    const cards = Array.from(cakeGrid.querySelectorAll('.cake-card'));
+    const emptyState = document.createElement('div');
+    emptyState.className = 'text-muted'; emptyState.style.fontSize = '14px';
+    emptyState.textContent = 'Tidak ada kue yang cocok dengan kriteria pencarian.';
+    emptyState.style.display = 'none';
+    cakeGrid.appendChild(emptyState);
+    
+    function applySearch() {
+      const q = (input.value || '').toLowerCase().trim(); let visibleCount = 0;
+      cards.forEach(card => { const name = (card.dataset.name || '').toLowerCase(); const matchName = q === '' || name.indexOf(q) !== -1; if (matchName) { card.style.display = ''; visibleCount++; } else { card.style.display = 'none'; } });
+      emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+    }
+    input.addEventListener('input', applySearch);
+    document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); input.select(); } });
+  })();
+
+  // --- SKRIPT UTAMA UNTUK MODAL TAMBAH KUE ---
+  const formTambahKue = document.getElementById('formTambahKue');
+  const tambahKueModal = document.getElementById('tambahKueModal');
+  const ingredientsListDiv = document.getElementById('ingredientsList');
+  let currentCakeId = null;
+
+  if (formTambahKue) {
+    formTambahKue.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const submitBtn = formTambahKue.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Menyimpan...';
+        
+        const formData = new FormData(formTambahKue);
+        formData.append('action', 'add_cake');
+        
+        fetch('daftarkue.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Network response was not ok: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
             if (data.success) {
-                currentResep = data.resep;
-                document.getElementById('namaKueModal').textContent = namaKue;
-                const detailResepEl = document.getElementById('detailResep');
-                detailResepEl.innerHTML = '<h6>Resep yang akan digunakan:</h6><ul>';
-                data.resep.forEach(item => { detailResepEl.innerHTML += `<li>${item.nama_bahan}: ${item.qty_per_pcs} ${item.satuan} per kue</li>`; });
-                detailResepEl.innerHTML += '</ul>';
-                const modal = new bootstrap.Modal(document.getElementById('buatKueModal'));
-                modal.show();
-            } else { alert('Gagal memuat resep kue: ' + data.message); }
-        }).catch(error => { console.error('Error:', error); alert('Terjadi kesalahan saat memuat resep kue'); });
-      }
-      document.getElementById('confirmBuatKue').addEventListener('click', function() {
-          const jumlahKue = parseInt(document.getElementById('jumlahKue').value);
-          if (jumlahKue < 1) { alert('Jumlah kue harus lebih dari 0'); return; }
-          fetch('buat_kue.php', { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ cake_id: currentCakeId, jumlah: jumlahKue }) }).then(response => response.json()).then(data => {
-              if (data.success) { const modal = bootstrap.Modal.getInstance(document.getElementById('buatKueModal')); modal.hide(); alert(`Berhasil membuat ${jumlahKue} ${document.getElementById('namaKueModal').textContent}! Stok bahan telah diperbarui.`); window.location.reload(); } else { alert('Gagal membuat kue: ' + data.message); }
-          }).catch(error => { console.error('Error:', error); alert('Terjadi kesalahan saat membuat kue'); });
-      });
-    </script>
+                const modalInstance = bootstrap.Modal.getInstance(tambahKueModal);
+                if(modalInstance) modalInstance.hide();
+                
+                showNotification(data.message, 'success');
+
+                if (data.cake_data) {
+                    const cakeGrid = document.getElementById('cakeGrid');
+                    const emptyState = cakeGrid.querySelector('.text-muted');
+                    if (emptyState) { emptyState.remove(); }
+
+                    const cake = data.cake_data;
+                    const harga = typeof cake.harga_jual === 'number' ? cake.harga_jual : parseFloat(cake.harga_jual);
+                    const formattedHarga = isNaN(harga) ? 'Rp -' : `Rp ${harga.toLocaleString('id-ID')}`;
+                    const gambar = cake.foto ? `uploads/kue/${cake.foto}` : 'assets/cake-placeholder.png';
+                    const deskripsi_tampil = cake.deskripsi || 'Belum ada deskripsi.';
+                    
+                    let resepHtml = '';
+                    if (cake.resep && cake.resep.length > 0) {
+                        resepHtml = `
+                            <div class="cake-resep">
+                                <div class="cake-resep-title"><i class="bi bi-journal-text"></i> Resep Kue</div>
+                                <ul class="cake-resep-list">
+                                    ${cake.resep.map(item => `<li>${item.nama_bahan}: ${item.qty_per_pcs} ${item.satuan}</li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    } else {
+                        resepHtml = `
+                            <div class="cake-resep">
+                                <div class="cake-resep-title"><i class="bi bi-journal-text"></i> Resep Kue</div>
+                                <div style="font-size:12px; color:var(--muted);">Belum ada resep untuk kue ini.</div>
+                            </div>
+                        `;
+                    }
+                    
+                    const newCardHtml = `
+                        <article class="cake-card" data-name="${cake.nama_kue.toLowerCase()}">
+                            <div class="cake-thumb-wrap">
+                                <img src="${gambar}" alt="${cake.nama_kue}">
+                            </div>
+                            <div class="mt-2">
+                                <div class="cake-info-title">
+                                    <div>
+                                        <div class="cake-name">${cake.nama_kue}</div>
+                                    </div>
+                                    <div class="cake-price">${formattedHarga}</div>
+                                </div>
+                                <div class="cake-desc">${deskripsi_tampil}</div>
+                                ${resepHtml}
+                                <div class="cake-footer">
+                                    <div class="cake-meta-small"><i class="bi bi-basket"></i> Stok Tersedia</div>
+                                    <div>
+                                        <button class="btn-cake-detail" onclick="window.location.href='kue_detail.php?id=${cake.id}'">Detail <i class="bi bi-arrow-right-short"></i></button>
+                                        <button class="btn-buat-kue" onclick="showBuatKueModal(${cake.id}, '${cake.nama_kue}')"><i class="bi bi-check-circle"></i> Buat Kue</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                    `;
+                    
+                    cakeGrid.insertAdjacentHTML('afterbegin', newCardHtml);
+                }
+            } else {
+                showNotification('Gagal menambah kue: ' + data.message, 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('Terjadi kesalahan saat menambah kue.', 'danger');
+        })
+        .finally(() => {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
+        });
+    });
+  }
+  
+  // --- Modal Bahan Baku ---
+  if (tambahKueModal) {
+    tambahKueModal.addEventListener('show.bs.modal', function () {
+        fetch('get_bahan_baku.php')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    let html = '<div class="row">';
+                    data.data.forEach(ingredient => {
+                        html += `
+                            <div class="col-md-6 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input ingredient-checkbox" type="checkbox" value="${ingredient.id}" id="ingredient_${ingredient.id}">
+                                    <label class="form-check-label" for="ingredient_${ingredient.id}">
+                                        ${ingredient.nama_bahan}
+                                    </label>
+                                    <div class="input-group input-group-sm mt-1 ingredient-qty-group" style="display: none;">
+                                        <input type="number" class="form-control" name="ingredients[${ingredient.id}]" placeholder="Jumlah" min="0" step="0.01">
+                                        <span class="input-group-text">${ingredient.satuan}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    ingredientsListDiv.innerHTML = html;
+
+                    document.querySelectorAll('.ingredient-checkbox').forEach(checkbox => {
+                        checkbox.addEventListener('change', function() {
+                            const qtyGroup = this.closest('.form-check').querySelector('.ingredient-qty-group');
+                            qtyGroup.style.display = this.checked ? 'flex' : 'none';
+                            if (this.checked) {
+                                qtyGroup.querySelector('input').focus();
+                            }
+                        });
+                    });
+                } else {
+                    ingredientsListDiv.innerHTML = '<p class="text-danger">Gagal memuat bahan baku.</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching ingredients:', error);
+                ingredientsListDiv.innerHTML = '<p class="text-danger">Terjadi kesalahan saat memuat bahan baku.</p>';
+            });
+    });
+
+    tambahKueModal.addEventListener('hidden.bs.modal', function () {
+        if (formTambahKue) {
+            formTambahKue.reset();
+        }
+        document.querySelectorAll('.ingredient-qty-group').forEach(group => {
+            group.style.display = 'none';
+        });
+        document.querySelectorAll('.ingredient-checkbox').forEach(checkbox => {
+            checkbox.checked = false;
+        });
+    });
+  }
+
+  // --- Modal Konfirmasi Pembuatan Kue ---
+  function showBuatKueModal(cakeId, namaKue) {
+    currentCakeId = cakeId;
+    fetch(`get_resep_kue.php?id=${cakeId}`).then(response => response.json()).then(data => {
+        if (data.success) {
+            currentResep = data.resep;
+            document.getElementById('namaKueModal').textContent = namaKue;
+            const detailResepEl = document.getElementById('detailResep');
+            detailResepEl.innerHTML = '<h6>Resep yang akan digunakan:</h6><ul>';
+            data.resep.forEach(item => { detailResepEl.innerHTML += `<li>${item.nama_bahan}: ${item.qty_per_pcs} ${item.satuan} per kue</li>`; });
+            detailResepEl.innerHTML += '</ul>';
+            const modal = new bootstrap.Modal(document.getElementById('buatKueModal'));
+            modal.show();
+        } else { 
+            showNotification('Gagal memuat resep kue: ' + data.message, 'danger');
+        }
+    }).catch(error => { 
+        console.error('Error:', error); 
+        showNotification('Terjadi kesalahan saat memuat resep kue', 'danger');
+    });
+  }
+  
+  const confirmBuatKueBtn = document.getElementById('confirmBuatKue');
+  if (confirmBuatKueBtn) {
+    confirmBuatKueBtn.addEventListener('click', function() {
+        const jumlahKue = parseInt(document.getElementById('jumlahKue').value);
+        if (jumlahKue < 1) { showNotification('Jumlah kue harus lebih dari 0', 'warning'); return; }
+        fetch('buat_kue.php', { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ cake_id: currentCakeId, jumlah: jumlahKue }) }).then(response => response.json()).then(data => {
+            if (data.success) { 
+                const modal = bootstrap.Modal.getInstance(document.getElementById('buatKueModal')); 
+                modal.hide(); 
+                showNotification(`Berhasil membuat ${jumlahKue} ${document.getElementById('namaKueModal').textContent}! Stok bahan telah diperbarui.`, 'success');
+            } else { 
+                showNotification('Gagal membuat kue: ' + data.message, 'danger'); 
+            }
+        }).catch(error => { 
+            console.error('Error:', error); 
+            showNotification('Terjadi kesalahan saat membuat kue', 'danger');
+        });
+    });
+  }
+
+}); // Akhir dari DOMContentLoaded
+</script>
 </body>
 </html>
