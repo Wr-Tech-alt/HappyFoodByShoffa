@@ -8,6 +8,55 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
+// --- LOGIKA HAPUS KUE (AJAX) ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_cake') {
+    $response = ['success' => false, 'message' => 'Terjadi kesalahan.'];
+    $cakeId = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+
+    if ($cakeId <= 0) {
+        $response['message'] = 'ID kue tidak valid.';
+        header('Content-Type: application/json');
+        echo json_encode($response);
+        exit();
+    }
+
+    $database = new Database();
+    $db = $database->connect();
+
+    if ($db) {
+        try {
+            $db->beginTransaction();
+
+            // Hapus resep kue terlebih dahulu
+            $sqlResep = "DELETE FROM resep_kue WHERE kue_id = :id";
+            $stmtResep = $db->prepare($sqlResep);
+            $stmtResep->bindParam(':id', $cakeId, PDO::PARAM_INT);
+            $stmtResep->execute();
+
+            // Hapus data kue
+            $sqlKue = "DELETE FROM kue WHERE id = :id";
+            $stmtKue = $db->prepare($sqlKue);
+            $stmtKue->bindParam(':id', $cakeId, PDO::PARAM_INT);
+            $stmtKue->execute();
+
+            $db->commit();
+            $response['success'] = true;
+            $response['message'] = 'Kue berhasil dihapus.';
+        } catch (PDOException $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            $response['message'] = 'Gagal menghapus kue: ' . $e->getMessage();
+        }
+    } else {
+        $response['message'] = 'Koneksi database gagal.';
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode($response);
+    exit();
+}
+
 // --- LOGIKA UNTUK MENAMBAHKAN KUE BARU (AJAX) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_cake') {
     $database = new Database();
@@ -174,7 +223,7 @@ if ($db) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-      /* ... (CSS tidak berubah) ... */
+      /* ... (CSS tidak berubah kecuali tambahan kecil di bawah) ... */
       :root{--accent:#6f42c1;--accent-2:#7c4dff;--muted:#6c757d;--page-bg:#f6f7fb;--card-bg:#ffffff;--sidebar-bg:#ffffff;--sidebar-ink:#2b2b3b;--soft-border:#eef0f4;}
       html,body{height:100%; min-height:100%; margin:0; font-family: "Inter", "Raleway", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--page-bg); color:#222;}
       body.dark-mode{--page-bg: #0f172a;--card-bg: #1a2334;--sidebar-bg: #1a2334;--sidebar-ink: #e6e9ff;--muted: #9aa0b4;--soft-border: rgba(255,255,255,0.06); background: var(--page-bg); color: #e6e9ff;}
@@ -185,7 +234,7 @@ if ($db) {
       body.dark-mode .nav-vertical a.active, body.dark-mode .nav-vertical a:hover { background: rgba(111,66,193,0.12) !important; box-shadow: none !important; }
       body.dark-mode .sidebar .tools { border-top: 1px solid var(--soft-border); }
       body.dark-mode .switch { background: #3b455b; }
-      body.dark-mode .switch.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+      body.dark-mode .switch.on { background: linear-gradient(135deg, var(--accent),var(--accent-2)); }
       body.dark-mode .switch .knob { background: #e6e9ff; }
       body.dark-mode .logout-btn { background: #243142; color: #e6e9ff; }
       body.dark-mode .header-card { background: var(--card-bg); border: 1px solid var(--soft-border); box-shadow: none; }
@@ -249,18 +298,25 @@ if ($db) {
       .cake-price { font-weight:800; font-size:16px; }
       .cake-desc { font-size:13px; color:var(--muted); margin:3px 0 4px 0; }
       .cake-resep { background-color: rgba(111,66,193,0.05); border-radius:12px; padding:10px; margin-bottom:10px; }
-      .cake-resep-title { font-size:13px; font-weight:700; margin-bottom:6px; color:var(--accent); }
+      .cake-resep-title { font-size:13px; font-weight:700; color:var(--accent); }
+      .cake-resep-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
       .cake-resep-list { font-size:12px; color:var(--muted); margin:0; padding-left:20px; }
       .cake-resep-list li { margin-bottom:4px; }
+      .cake-resep-list.collapsed { max-height:80px; overflow:hidden; } /* tidak krusial, js yang ngatur li */
+      .cake-resep-toggle { margin-top:4px; font-size:12px; font-weight:600; color:var(--accent); background:none; border:none; padding:0; cursor:pointer; }
+      body.dark-mode .cake-resep-toggle { color:#c4b5fd; }
       .cake-footer { display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
       .cake-meta-small { font-size:11px; color:var(--muted); display:flex; align-items:center; gap:4px; }
       .btn-cake-detail { border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600; border:none; background:#eef2ff; color:#4f46e5; display:inline-flex; align-items:center; gap:4px; }
-      .btn-buat-kue { border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600; border:none; background:linear-gradient(135deg, #10b981, #059669); color:#fff; display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+      .btn-cake-delete { border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600; border:none; background:#fee2e2; color:#b91c1c; display:inline-flex; align-items:center; gap:4px; margin-left:4px; }
+      .btn-buat-kue { border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600; border:none; background:linear-gradient(135deg, #10b981, #059669); color:#fff; display:inline-flex; align-items:center; gap:4px; cursor:pointer; margin-left:4px; }
+      .cake-actions { display:flex; gap:6px; }
       body.dark-mode .cake-card { background:#1a2334; box-shadow:none; border:1px solid rgba(255,255,255,0.04); }
       body.dark-mode .cake-thumb-wrap { background:linear-gradient(135deg, #1f2937, #111827); }
       body.dark-mode .cake-desc, body.dark-mode .cake-meta-small { color:#9aa0b4; }
       body.dark-mode .cake-resep { background-color: rgba(111,66,193,0.1); }
       body.dark-mode .btn-cake-detail { background:#0b1220; color:#e6e9ff; }
+      body.dark-mode .btn-cake-delete { background:#450a0a; color:#fecaca; }
       body.dark-mode .btn-buat-kue { background:linear-gradient(135deg, #059669, #047857); }
       .modal-content { border-radius:16px; border:none; }
       .modal-header { border-bottom:1px solid var(--soft-border); background:var(--card-bg); border-radius:16px 16px 0 0; }
@@ -357,7 +413,7 @@ if ($db) {
                                 $gambar = !empty($cake['foto']) ? 'uploads/kue/' . $cake['foto'] : 'assets/cake-placeholder.png';
                                 $deskripsi_tampil = $cake['deskripsi'] ?: 'Belum ada deskripsi.';
                             ?>
-                            <article class="cake-card" data-name="<?= htmlspecialchars(mb_strtolower($cake['nama_kue']), ENT_QUOTES) ?>"> 
+                            <article class="cake-card" data-id="<?= (int)$cake['id'] ?>" data-name="<?= htmlspecialchars(mb_strtolower($cake['nama_kue']), ENT_QUOTES) ?>"> 
                                 <div class="cake-thumb-wrap">
                                     <img src="<?= htmlspecialchars($gambar, ENT_QUOTES) ?>" alt="<?= htmlspecialchars($cake['nama_kue'], ENT_QUOTES) ?>">
                                     <?php if (!empty($cake['deskripsi']) && stripos($cake['deskripsi'], 'best') !== false): ?>
@@ -373,23 +429,34 @@ if ($db) {
                                     </div>
                                     <div class="cake-desc"><?= htmlspecialchars($deskripsi_tampil, ENT_QUOTES) ?></div>
                                     <div class="cake-resep">
-                                        <div class="cake-resep-title"><i class="bi bi-journal-text"></i> Resep Kue</div>
+                                        <div class="cake-resep-header">
+                                            <div class="cake-resep-title"><i class="bi bi-journal-text"></i> Resep Kue</div>
+                                        </div>
                                         <?php if (!empty($cake['resep'])): ?>
-                                            <ul class="cake-resep-list">
+                                            <ul class="cake-resep-list" data-collapsed="true">
                                                 <?php foreach ($cake['resep'] as $item): ?>
                                                     <li><?= htmlspecialchars($item['nama_bahan'], ENT_QUOTES) ?>: <?= htmlspecialchars($item['qty_per_pcs'], ENT_QUOTES) ?> <?= htmlspecialchars($item['satuan'], ENT_QUOTES) ?></li>
                                                 <?php endforeach; ?>
                                             </ul>
+                                            <?php if (count($cake['resep']) > 2): ?>
+                                                <button type="button" class="cake-resep-toggle" data-expanded="false">Selengkapnya</button>
+                                            <?php endif; ?>
                                         <?php else: ?>
                                             <div style="font-size:12px; color:var(--muted);">Belum ada resep untuk kue ini.</div>
                                         <?php endif; ?>
                                     </div>
                                     <div class="cake-footer">
-                                        <div class="cake-meta-small"><i class="bi bi-basket"></i> Stok Tersedia</div>
-                                        <div>
-                                            <button class="btn-cake-detail" onclick="window.location.href='kue_detail.php?id=<?= (int)$cake['id'] ?>'">Detail <i class="bi bi-arrow-right-short"></i></button>
-                                            <button class="btn-buat-kue" onclick="showBuatKueModal(<?= (int)$cake['id'] ?>, '<?= htmlspecialchars($cake['nama_kue'], ENT_QUOTES) ?>')"><i class="bi bi-check-circle"></i> Buat Kue</button>
+                                        <div class="cake-actions">
+                                            <button class="btn-cake-detail" onclick="window.location.href='kue_edit.php?id=<?= (int)$cake['id'] ?>'">
+                                                <i class="bi bi-pencil-square"></i> Ubah
+                                            </button>
+                                            <button class="btn-cake-delete" type="button" onclick="hapusKue(<?= (int)$cake['id'] ?>)">
+                                                <i class="bi bi-trash"></i> Hapus
+                                            </button>
                                         </div>
+                                        <button class="btn-buat-kue" type="button" onclick="showBuatKueModal(<?= (int)$cake['id'] ?>, '<?= htmlspecialchars($cake['nama_kue'], ENT_QUOTES) ?>')">
+                                            <i class="bi bi-check-circle"></i> Buat Kue
+                                        </button>
                                     </div>
                                 </div>
                             </article>
@@ -546,6 +613,53 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); input.select(); } });
   })();
 
+  // --- HELPER: Atur tampilan 2 baris pertama resep ---
+  function applyResepCollapse(list, collapse) {
+    const items = list.querySelectorAll('li');
+    items.forEach((li, idx) => {
+      if (collapse && idx >= 2) {
+        li.style.display = 'none';
+      } else {
+        li.style.display = 'list-item';
+      }
+    });
+    list.dataset.collapsed = collapse ? 'true' : 'false';
+  }
+
+  // --- INIT TOGGLE RESEP (Selengkapnya) ---
+  function initResepToggles(root = document) {
+    // set state awal dari semua list
+    const lists = root.querySelectorAll('.cake-resep-list');
+    lists.forEach(list => {
+      const collapse = list.dataset.collapsed !== 'false'; // default: true
+      applyResepCollapse(list, collapse);
+    });
+
+    const toggles = root.querySelectorAll('.cake-resep-toggle');
+    toggles.forEach(btn => {
+      if (btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', function() {
+        const list = this.closest('.cake-resep').querySelector('.cake-resep-list');
+        if (!list) return;
+        const collapsed = list.dataset.collapsed !== 'false';
+        // toggle: kalau collapsed -> expand, kalau expand -> collapse
+        applyResepCollapse(list, !collapsed ? true : false); // kebalik biar simple
+        const newCollapsed = list.dataset.collapsed !== 'false';
+        if (newCollapsed) {
+          this.textContent = 'Selengkapnya';
+          this.setAttribute('data-expanded', 'false');
+        } else {
+          this.textContent = 'Sembunyikan';
+          this.setAttribute('data-expanded', 'true');
+        }
+      });
+    });
+  }
+
+  // panggil untuk card yang sudah ada
+  initResepToggles();
+
   // --- SKRIPT UTAMA UNTUK MODAL TAMBAH KUE ---
   const formTambahKue = document.getElementById('formTambahKue');
   const tambahKueModal = document.getElementById('tambahKueModal');
@@ -594,25 +708,31 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     let resepHtml = '';
                     if (cake.resep && cake.resep.length > 0) {
+                        const hasToggle = cake.resep.length > 2;
                         resepHtml = `
                             <div class="cake-resep">
-                                <div class="cake-resep-title"><i class="bi bi-journal-text"></i> Resep Kue</div>
-                                <ul class="cake-resep-list">
+                                <div class="cake-resep-header">
+                                    <div class="cake-resep-title"><i class="bi bi-journal-text"></i> Resep Kue</div>
+                                </div>
+                                <ul class="cake-resep-list" data-collapsed="true">
                                     ${cake.resep.map(item => `<li>${item.nama_bahan}: ${item.qty_per_pcs} ${item.satuan}</li>`).join('')}
                                 </ul>
+                                ${hasToggle ? '<button type="button" class="cake-resep-toggle" data-expanded="false">Selengkapnya</button>' : ''}
                             </div>
                         `;
                     } else {
                         resepHtml = `
                             <div class="cake-resep">
-                                <div class="cake-resep-title"><i class="bi bi-journal-text"></i> Resep Kue</div>
+                                <div class="cake-resep-header">
+                                    <div class="cake-resep-title"><i class="bi bi-journal-text"></i> Resep Kue</div>
+                                </div>
                                 <div style="font-size:12px; color:var(--muted);">Belum ada resep untuk kue ini.</div>
                             </div>
                         `;
                     }
                     
                     const newCardHtml = `
-                        <article class="cake-card" data-name="${cake.nama_kue.toLowerCase()}">
+                        <article class="cake-card" data-id="${cake.id}" data-name="${cake.nama_kue.toLowerCase()}">
                             <div class="cake-thumb-wrap">
                                 <img src="${gambar}" alt="${cake.nama_kue}">
                             </div>
@@ -626,17 +746,27 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <div class="cake-desc">${deskripsi_tampil}</div>
                                 ${resepHtml}
                                 <div class="cake-footer">
-                                    <div class="cake-meta-small"><i class="bi bi-basket"></i> Stok Tersedia</div>
-                                    <div>
-                                        <button class="btn-cake-detail" onclick="window.location.href='kue_detail.php?id=${cake.id}'">Detail <i class="bi bi-arrow-right-short"></i></button>
-                                        <button class="btn-buat-kue" onclick="showBuatKueModal(${cake.id}, '${cake.nama_kue}')"><i class="bi bi-check-circle"></i> Buat Kue</button>
+                                    <div class="cake-actions">
+                                        <button class="btn-cake-detail" onclick="window.location.href='kue_edit.php?id=${cake.id}'">
+                                            <i class="bi bi-pencil-square"></i> Ubah
+                                        </button>
+                                        <button class="btn-cake-delete" type="button" onclick="hapusKue(${cake.id})">
+                                            <i class="bi bi-trash"></i> Hapus
+                                        </button>
                                     </div>
+                                    <button class="btn-buat-kue" type="button" onclick="showBuatKueModal(${cake.id}, '${cake.nama_kue}')">
+                                        <i class="bi bi-check-circle"></i> Buat Kue
+                                    </button>
                                 </div>
                             </div>
                         </article>
                     `;
                     
                     cakeGrid.insertAdjacentHTML('afterbegin', newCardHtml);
+                    const newCard = cakeGrid.querySelector(`.cake-card[data-id="${cake.id}"]`);
+                    if (newCard) {
+                        initResepToggles(newCard);
+                    }
                 }
             } else {
                 showNotification('Gagal menambah kue: ' + data.message, 'danger');
@@ -713,7 +843,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // --- Modal Konfirmasi Pembuatan Kue ---
-  function showBuatKueModal(cakeId, namaKue) {
+  window.showBuatKueModal = function(cakeId, namaKue) {
     currentCakeId = cakeId;
     fetch(`get_resep_kue.php?id=${cakeId}`).then(response => response.json()).then(data => {
         if (data.success) {
@@ -751,6 +881,37 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Error:', error); 
             showNotification('Terjadi kesalahan saat membuat kue', 'danger');
         });
+    });
+  }
+
+  // --- Fungsi Hapus Kue (global utk dipanggil dari tombol Hapus) ---
+  window.hapusKue = function(cakeId) {
+    if (!confirm('Yakin ingin menghapus kue ini? Semua resep kue ini juga akan dihapus.')) {
+        return;
+    }
+    const formData = new FormData();
+    formData.append('action', 'delete_cake');
+    formData.append('id', cakeId);
+
+    fetch('daftarkue.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const card = document.querySelector(`.cake-card[data-id="${cakeId}"]`);
+            if (card) {
+                card.remove();
+            }
+            showNotification(data.message, 'success');
+        } else {
+            showNotification('Gagal menghapus kue: ' + data.message, 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Terjadi kesalahan saat menghapus kue.', 'danger');
     });
   }
 
