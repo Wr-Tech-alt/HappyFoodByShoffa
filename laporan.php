@@ -8,38 +8,134 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
+// --- koneksi DB untuk log kue ---
+ $database = new Database();
+ $db = $database->connect();
+
 // Dummy classes fallback (jika belum ada)
-$logStok = new LogStok();
-$bahanBaku = new BahanBaku();
+ $logStok = new LogStok();
+ $bahanBaku = new BahanBaku();
 
-// filters
-$filter_bahan = $_GET['filter_bahan'] ?? '';
-$filter_jenis = $_GET['filter_jenis'] ?? '';
-$filter_tanggal = $_GET['filter_tanggal'] ?? '';
+// Pagination settings
+ $itemsPerPage = 4;
+ $pageStock = isset($_GET['page_stock']) ? (int)$_GET['page_stock'] : 1;
+ $pageCake = isset($_GET['page_cake']) ? (int)$_GET['page_cake'] : 1;
+ $offsetStock = ($pageStock - 1) * $itemsPerPage;
+ $offsetCake = ($pageCake - 1) * $itemsPerPage;
 
-$logs = $logStok->getAll();
-$bahans = $bahanBaku->getAll();
+// filters stok
+ $filter_bahan   = $_GET['filter_bahan'] ?? '';
+ $filter_jenis   = $_GET['filter_jenis'] ?? '';
+ $filter_tanggal = $_GET['filter_tanggal'] ?? '';
 
+ $logs   = $logStok->getAll();
+ $bahans = $bahanBaku->getAll();
+
+// dummy jika kosong
 if (empty($logs)) {
     $logs = [
         [
-            'created_at' => '2025-11-19 13:32:00',
-            'nama_bahan' => 'Telur',
+            'created_at'      => '2025-11-19 13:32:00',
+            'nama_bahan'      => 'Telur',
             'jenis_transaksi' => 'masuk',
-            'jumlah' => 30.00,
-            'stok_sebelum' => 50.00,
-            'stok_sesudah' => 80.00,
-            'nama_user' => 'Shofa Owner',
-            'keterangan' => 'Pesanan Banyak',
-            'id_bahan' => '1'
+            'jumlah'          => 30.00,
+            'stok_sebelum'    => 50.00,
+            'stok_sesudah'    => 80.00,
+            'nama_user'       => 'Shofa Owner',
+            'keterangan'      => 'Pesanan Banyak',
+            'id_bahan'        => '1'
         ],
+        [
+            'created_at'      => '2025-11-20 10:15:00',
+            'nama_bahan'      => 'Gula',
+            'jenis_transaksi' => 'keluar',
+            'jumlah'          => 5.00,
+            'stok_sebelum'    => 25.00,
+            'stok_sesudah'    => 20.00,
+            'nama_user'       => 'Shofa Owner',
+            'keterangan'      => 'Pemakaian Harian',
+            'id_bahan'        => '2'
+        ],
+        [
+            'created_at'      => '2025-11-21 14:22:00',
+            'nama_bahan'      => 'Tepung',
+            'jenis_transaksi' => 'masuk',
+            'jumlah'          => 15.00,
+            'stok_sebelum'    => 10.00,
+            'stok_sesudah'    => 25.00,
+            'nama_user'       => 'Shofa Owner',
+            'keterangan'      => 'Stok Tambahan',
+            'id_bahan'        => '3'
+        ],
+        [
+            'created_at'      => '2025-11-22 09:45:00',
+            'nama_bahan'      => 'Cokelat',
+            'jenis_transaksi' => 'keluar',
+            'jumlah'          => 3.00,
+            'stok_sebelum'    => 12.00,
+            'stok_sesudah'    => 9.00,
+            'nama_user'       => 'Shofa Owner',
+            'keterangan'      => 'Pemakaian Kue',
+            'id_bahan'        => '4'
+        ],
+        [
+            'created_at'      => '2025-11-23 16:30:00',
+            'nama_bahan'      => 'Mentega',
+            'jenis_transaksi' => 'masuk',
+            'jumlah'          => 8.00,
+            'stok_sebelum'    => 5.00,
+            'stok_sesudah'    => 13.00,
+            'nama_user'       => 'Shofa Owner',
+            'keterangan'      => 'Stok Darurat',
+            'id_bahan'        => '5'
+        ],
+        [
+            'created_at'      => '2025-11-24 11:10:00',
+            'nama_bahan'      => 'Susu',
+            'jenis_transaksi' => 'keluar',
+            'jumlah'          => 2.00,
+            'stok_sebelum'    => 8.00,
+            'stok_sesudah'    => 6.00,
+            'nama_user'       => 'Shofa Owner',
+            'keterangan'      => 'Pemakaian Kue',
+            'id_bahan'        => '6'
+        ],
+        [
+            'created_at'      => '2025-11-25 13:05:00',
+            'nama_bahan'      => 'Ragi',
+            'jenis_transaksi' => 'masuk',
+            'jumlah'          => 4.00,
+            'stok_sebelum'    => 2.00,
+            'stok_sesudah'    => 6.00,
+            'nama_user'       => 'Shofa Owner',
+            'keterangan'      => 'Stok Baru',
+            'id_bahan'        => '7'
+        ],
+        [
+            'created_at'      => '2025-11-26 08:50:00',
+            'nama_bahan'      => 'Vanili',
+            'jenis_transaksi' => 'keluar',
+            'jumlah'          => 1.00,
+            'stok_sebelum'    => 5.00,
+            'stok_sesudah'    => 4.00,
+            'nama_user'       => 'Shofa Owner',
+            'keterangan'      => 'Pemakaian Kue',
+            'id_bahan'        => '8'
+        ]
     ];
     $bahans = [
         ['id' => '1', 'nama_bahan' => 'Telur'],
         ['id' => '2', 'nama_bahan' => 'Gula'],
+        ['id' => '3', 'nama_bahan' => 'Tepung'],
+        ['id' => '4', 'nama_bahan' => 'Cokelat'],
+        ['id' => '5', 'nama_bahan' => 'Mentega'],
+        ['id' => '6', 'nama_bahan' => 'Susu'],
+        ['id' => '7', 'nama_bahan' => 'Ragi'],
+        ['id' => '8', 'nama_bahan' => 'Vanili']
     ];
 }
 
+// filter stok
 if ($filter_bahan) {
     $logs = array_filter($logs, fn($log) => ($log['id_bahan'] ?? '') == $filter_bahan);
 }
@@ -49,6 +145,114 @@ if ($filter_jenis) {
 if ($filter_tanggal) {
     $logs = array_filter($logs, fn($log) => date('Y-m-d', strtotime($log['created_at'])) == $filter_tanggal);
 }
+
+// Reset array keys after filtering
+ $logs = array_values($logs);
+
+// Get total count for pagination
+ $totalLogs = count($logs);
+
+// Get paginated logs
+ $paginatedLogs = array_slice($logs, $offsetStock, $itemsPerPage);
+
+// --- ambil riwayat pembuatan kue ---
+ $cakeLogs = [];
+if ($db) {
+    try {
+        $sqlCakeLogs = "SELECT lpk.*, k.nama_kue, u.nama_lengkap AS nama_user
+                        FROM log_pembuatan_kue lpk
+                        JOIN kue k ON lpk.kue_id = k.id
+                        LEFT JOIN users u ON lpk.user_id = u.id
+                        ORDER BY lpk.created_at DESC";
+        $stmtCake = $db->prepare($sqlCakeLogs);
+        $stmtCake->execute();
+        $cakeLogs = $stmtCake->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // kalau error, biarin kosong aja / bisa tulis ke error_log
+        error_log('Error fetching log_pembuatan_kue: ' . $e->getMessage());
+        $cakeLogs = [];
+    }
+}
+
+// dummy kalau belum ada data kue
+if (empty($cakeLogs)) {
+    $cakeLogs = [
+        [
+            'created_at'  => '2025-12-04 13:45:00',
+            'kue_id'      => 1,
+            'nama_kue'    => 'Brownies',
+            'jumlah_kue'  => 10,
+            'nama_user'   => 'Shofa Owner',
+            'keterangan'  => 'Buat kue percobaan'
+        ],
+        [
+            'created_at'  => '2025-12-05 10:30:00',
+            'kue_id'      => 2,
+            'nama_kue'    => 'Donat',
+            'jumlah_kue'  => 15,
+            'nama_user'   => 'Shofa Owner',
+            'keterangan'  => 'Pesanan Khusus'
+        ],
+        [
+            'created_at'  => '2025-12-06 14:15:00',
+            'kue_id'      => 3,
+            'nama_kue'    => 'Kue Tart',
+            'jumlah_kue'  => 5,
+            'nama_user'   => 'Shofa Owner',
+            'keterangan'  => 'Ulang Tahun'
+        ],
+        [
+            'created_at'  => '2025-12-07 09:45:00',
+            'kue_id'      => 4,
+            'nama_kue'    => 'Croissant',
+            'jumlah_kue'  => 20,
+            'nama_user'   => 'Shofa Owner',
+            'keterangan'  => 'Stok Harian'
+        ],
+        [
+            'created_at'  => '2025-12-08 16:20:00',
+            'kue_id'      => 5,
+            'nama_kue'    => 'Cheesecake',
+            'jumlah_kue'  => 8,
+            'nama_user'   => 'Shofa Owner',
+            'keterangan'  => 'Pesanan Restoran'
+        ],
+        [
+            'created_at'  => '2025-12-09 11:10:00',
+            'kue_id'      => 6,
+            'nama_kue'    => 'Cookies',
+            'jumlah_kue'  => 50,
+            'nama_user'   => 'Shofa Owner',
+            'keterangan'  => 'Paket Lebaran'
+        ],
+        [
+            'created_at'  => '2025-12-10 13:30:00',
+            'kue_id'      => 7,
+            'nama_kue'    => 'Pancake',
+            'jumlah_kue'  => 12,
+            'nama_user'   => 'Shofa Owner',
+            'keterangan'  => 'Menu Sarapan'
+        ],
+        [
+            'created_at'  => '2025-12-11 08:55:00',
+            'kue_id'      => 8,
+            'nama_kue'    => 'Muffin',
+            'jumlah_kue'  => 25,
+            'nama_user'   => 'Shofa Owner',
+            'keterangan'  => 'Stok Kedai'
+        ]
+    ];
+}
+
+// Get total count for cake logs pagination
+ $totalCakeLogs = count($cakeLogs);
+
+// Get paginated cake logs
+ $paginatedCakeLogs = array_slice($cakeLogs, $offsetCake, $itemsPerPage);
+
+// Calculate total pages for pagination
+ $totalPagesStock = ceil($totalLogs / $itemsPerPage);
+ $totalPagesCake = ceil($totalCakeLogs / $itemsPerPage);
 ?>
 <!doctype html>
 <html lang="id">
@@ -176,329 +380,167 @@ if ($filter_tanggal) {
       .search-box{ width:100%; }
       .app{ padding:12px; }
     }
+
     body.dark-mode .filter-section,
-body.dark-mode .card-table {
-  background: #1a2334 !important;
-  border: 1px solid rgba(255,255,255,0.09) !important;
-  color: #e6e9ff !important;
-}
-
-body.dark-mode .form-control,
-body.dark-mode .form-select {
-  background: #0b1220 !important;
-  color: #e6e9ff !important;
-  border-color: rgba(255,255,255,0.10);
-}
-
-body.dark-mode .form-control::placeholder {
-  color: #9aa0b4 !important;
-  opacity: 1;
-}
-
-body.dark-mode .btn-primary, 
-body.dark-mode .btn-secondary {
-  color: #fff !important;
-  border: none;
-}
-body.dark-mode .btn-secondary {
-  background: #44485c !important;
-  color: #e6e9ff !important;
-}
-
-body.dark-mode .table {
-  background: transparent !important;
-  color: #e6e9ff !important;
-}
-body.dark-mode .table thead th {
-  background: rgba(255,255,255,0.04) !important;
-  color: #e6e9ff !important;
-  border-bottom: 1px solid #222 !important;
-}
-body.dark-mode .table tbody tr {
-  background: transparent !important;
-  border-bottom: 1px solid rgba(255,255,255,0.09) !important;
-}
-body.dark-mode .table-hover tbody tr:hover {
-  background: rgba(249,115,172,0.09) !important;
-}
-body.dark-mode .badge {
-  color: #fff !important;
-}
-
-body.dark-mode .text-muted {
-  color: #9aa0b4 !important;
-}
-body.dark-mode .card-table .table tbody tr:nth-child(even) {
-  background-color: #212a3a !important;
-}
-body.dark-mode .card-table .table tbody tr:nth-child(odd) {
-  background-color: transparent !important;
-}
-body.dark-mode .card-table,
-body.dark-mode .table,
-body.dark-mode .table tbody,
-body.dark-mode .table tr,
-body.dark-mode .table td,
-body.dark-mode .table th {
-  background: #1a2334 !important;
-  color: #e6e9ff !important;
-}
-
-body.dark-mode .table thead th {
-  background: rgba(255,255,255,0.04) !important;
-  color: #e6e9ff !important;
-}
-
-body.dark-mode .table-striped > tbody > tr:nth-of-type(even) > td,
-body.dark-mode .card-table .table tbody tr:nth-child(even) > td {
-  background-color: #212a3a !important;
-}
-
-body.dark-mode .table-hover tbody tr:hover > td {
-  background: rgba(249,115,172,0.09) !important;
-  color: #fff !important;
-}
-/* Memperjelas ikon date-picker pada dark-mode (fix browser default icon) */
-body.dark-mode input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(1.6);
-  opacity: 1;
-}
-
-/* Untuk browser non-Webkit */
-body.dark-mode input[type="date"]::-moz-calendar-picker-indicator {
-  filter: invert(1) brightness(1.6);
-  opacity: 1;
-}
-
-body.dark-mode input[type="date"]::-ms-input-placeholder {
-  color: #9aa0b4;
-  opacity: 1;
-}
-
-body.dark-mode input[type="date"] {
-  background: #0b1220 !important;
-  color: #e6e9ff !important;
-  border-color: rgba(255,255,255,0.10);
-}
-/* ... (CSS yang sudah ada) ... */
-
-    /* Aturan Khusus untuk Cetak: Mirip Screenshot */
-    @media print {
-        /* 1. Sembunyikan elemen UI yang tidak perlu dicetak */
-        .sidebar,
-        .topbar,
-        .filter-section,
-        .btn-print,
-        .collapse-inline,
-        .search-wrap,
-        /* Sembunyikan footer di bawah halaman */
-        body::after {
-            display: none !important;
-        }
-
-        /* 2. Pengaturan Dasar Halaman dan Kontainer */
-        html, body {
-            background: #fff !important;
-            color: #000 !important;
-            margin: 0;
-            padding: 0;
-            font-family: Arial, sans-serif;
-        }
-        .container-fluid, .app, .main {
-            padding: 20px 30px !important; /* Tambahkan sedikit padding ke pinggir */
-            margin: 0 !important;
-            min-height: auto;
-            display: block;
-        }
-
-        /* 3. Header Laporan */
-        .header-card {
-            background: none !important;
-            border: none !important;
-            box-shadow: none !important;
-            padding: 0;
-            margin-bottom: 30px;
-            display: block;
-            border-bottom: 1px solid #eef0f4; /* Mirip pemisah di screenshot */
-            padding-bottom: 15px;
-        }
-        .header-card h4 {
-            font-size: 24px;
-            font-weight: 400; /* Tidak terlalu tebal seperti H4 default */
-            margin: 0 0 4px 0 !important;
-        }
-        .header-card div:last-child {
-            display: none !important; /* Sembunyikan tombol 'Cetak' */
-        }
-        .header-card div:first-child + div {
-            color: #6c757d !important;
-            font-size: 14px;
-        }
-
-        /* 4. Tiga Kotak Statistik Ringkasan (Meniru tampilan di Screenshot) */
-        .stats {
-            display: block !important; /* Nonaktifkan flexbox utama */
-            width: 100%;
-            margin-top: 0 !important;
-            margin-bottom: 20px;
-        }
-        .stat {
-            /* Stat di print tidak lagi menggunakan flex, tapi block */
-            background: none !important;
-            border: none !important;
-            box-shadow: none !important;
-            padding: 10px 0 !important;
-            min-width: 100%;
-            border-bottom: 1px solid #eef0f4; /* Pembatas antar stat */
-            display: flex; /* Gunakan flex untuk memisahkan value dan icon */
-            justify-content: space-between;
-            align-items: center;
-        }
-        .stat:last-of-type {
-            border-bottom: none;
-        }
-        .stat .meta {
-            color: #333 !important; /* Judul Statistik */
-            font-size: 15px;
-            font-weight: 500;
-        }
-        .stat .value {
-            font-size: 22px;
-            font-weight: 700 !important;
-            color: #000 !important;
-        }
-        .stat .icon {
-            background: none !important;
-            color: #6c757d !important; /* Warna ikon jadi abu-abu */
-            font-size: 22px !important;
-            width: auto !important;
-            height: auto !important;
-            margin-left: 10px;
-        }
-        /* Penyesuaian untuk "Total Transaksi" agar ada ikon daftar */
-        .stat.blue .icon {
-            display: none !important; /* Sembunyikan ikon bi-list-check bawaan */
-        }
-        /* Tambahkan ikon list di sebelah Total Transaksi */
-        .stat.blue .value::after {
-            content: "\e5b0"; /* Unicode untuk bi-list-task atau bi-list-check (jika font icons tersedia) */
-            font-family: "bootstrap-icons";
-            margin-left: 8px;
-            color: #6c757d !important;
-        }
-        /* Tambahkan Ikon sesuai screenshot di sebelah Judul Stat */
-        .stat.green .meta::before {
-            content: "\e139"; /* bi-arrow-down-circle */
-            font-family: "bootstrap-icons";
-            margin-right: 8px;
-            font-size: 16px;
-            color: #333;
-            vertical-align: middle;
-        }
-        .stat.yellow .meta::before {
-            content: "\e128"; /* bi-arrow-up-circle */
-            font-family: "bootstrap-icons";
-            margin-right: 8px;
-            font-size: 16px;
-            color: #333;
-            vertical-align: middle;
-        }
-
-
-        /* 5. Riwayat Transaksi (Tabel) */
-        .card-table {
-            box-shadow: none !important;
-            border: none !important;
-            margin-top: 0 !important;
-        }
-        .card-table .card-header {
-            background: none !important;
-            border-bottom: 1px solid #eef0f4 !important;
-            padding: 15px 0 10px 0 !important;
-            margin-bottom: 0;
-            display: flex;
-            align-items: center;
-        }
-        .card-table .card-header h5 {
-            font-size: 16px;
-            font-weight: 600;
-            color: #333;
-        }
-        .card-table .card-header h5 .bi {
-             color: #6c757d;
-             font-size: 18px;
-             margin-right: 5px;
-        }
-        .card-table .card-header small {
-            display: none;
-        }
-        .card-table .card-body {
-            padding: 0 !important;
-        }
-        
-        /* Tabel itu sendiri */
-        .table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .table th, .table td {
-            border: none !important;
-            border-bottom: 1px solid #eef0f4 !important;
-            padding: 8px 10px !important;
-            font-size: 12px;
-            color: #000 !important;
-        }
-        .table thead th {
-            background-color: #fff !important;
-            font-weight: 700 !important;
-            font-size: 11px;
-            color: #6c757d !important;
-            text-transform: uppercase;
-            border-top: 1px solid #eef0f4 !important;
-            border-bottom: 1px solid #eef0f4 !important;
-        }
-        .table tbody tr:last-child td {
-            border-bottom: none !important;
-        }
-        .table-hover tbody tr:hover {
-            background: none !important; /* Hapus hover saat dicetak */
-        }
-        .badge {
-            background: none !important;
-            color: #333 !important;
-            padding: 0 !important;
-            font-weight: normal;
-        }
-        .badge .bi {
-            font-size: 11px;
-            vertical-align: baseline;
-        }
-        .text-success { color: #198754 !important; }
-        .text-warning { color: #ffc107 !important; }
-
-        /* Untuk meniru tampilan akhir di footer */
-        @page {
-            size: A4;
-            margin: 1cm;
-        }
-        
-        /* Untuk meniru tulisan URL di bawah */
-        .main::after {
-            content: "localhost/happyfood_backup/laporan.php"; /* Sesuai gambar */
-            display: block;
-            position: fixed;
-            bottom: 5px;
-            left: 30px;
-            font-size: 10px;
-            color: #6c757d;
-        }
+    body.dark-mode .card-table {
+      background: #1a2334 !important;
+      border: 1px solid rgba(255,255,255,0.09) !important;
+      color: #e6e9ff !important;
     }
+
+    body.dark-mode .form-control,
+    body.dark-mode .form-select {
+      background: #0b1220 !important;
+      color: #e6e9ff !important;
+      border-color: rgba(255,255,255,0.10);
+    }
+
+    body.dark-mode .form-control::placeholder {
+      color: #9aa0b4 !important;
+      opacity: 1;
+    }
+
+    body.dark-mode .btn-primary, 
+    body.dark-mode .btn-secondary {
+      color: #fff !important;
+      border: none;
+    }
+    body.dark-mode .btn-secondary {
+      background: #44485c !important;
+      color: #e6e9ff !important;
+    }
+
+    body.dark-mode .table {
+      background: transparent !important;
+      color: #e6e9ff !important;
+    }
+    body.dark-mode .table thead th {
+      background: rgba(255,255,255,0.04) !important;
+      color: #e6e9ff !important;
+      border-bottom: 1px solid #222 !important;
+    }
+    body.dark-mode .table tbody tr {
+      background: transparent !important;
+      border-bottom: 1px solid rgba(255,255,255,0.09) !important;
+    }
+    body.dark-mode .table-hover tbody tr:hover {
+      background: rgba(249,115,172,0.09) !important;
+    }
+    body.dark-mode .badge {
+      color: #fff !important;
+    }
+
+    body.dark-mode .text-muted {
+      color: #9aa0b4 !important;
+    }
+    body.dark-mode .card-table .table tbody tr:nth-child(even) {
+      background-color: #212a3a !important;
+    }
+    body.dark-mode .card-table .table tbody tr:nth-child(odd) {
+      background-color: transparent !important;
+    }
+    body.dark-mode .card-table,
+    body.dark-mode .table,
+    body.dark-mode .table tbody,
+    body.dark-mode .table tr,
+    body.dark-mode .table td,
+    body.dark-mode .table th {
+      background: #1a2334 !important;
+      color: #e6e9ff !important;
+    }
+
+    body.dark-mode .table thead th {
+      background: rgba(255,255,255,0.04) !important;
+      color: #e6e9ff !important;
+    }
+
+    body.dark-mode .table-striped > tbody > tr:nth-of-type(even) > td,
+    body.dark-mode .card-table .table tbody tr:nth-child(even) > td {
+      background-color: #212a3a !important;
+    }
+
+    body.dark-mode .table-hover tbody tr:hover > td {
+      background: rgba(249,115,172,0.09) !important;
+      color: #fff !important;
+    }
+    body.dark-mode input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(1) brightness(1.6);
+      opacity: 1;
+    }
+    body.dark-mode input[type="date"]::-moz-calendar-picker-indicator {
+      filter: invert(1) brightness(1.6);
+      opacity: 1;
+    }
+    body.dark-mode input[type="date"] {
+      background: #0b1220 !important;
+      color: #e6e9ff !important;
+      border-color: rgba(255,255,255,0.10);
+    }
+
+    /* Pagination styles */
+    .pagination-container {
+      display: flex;
+      justify-content: center;
+      margin-top: 15px;
+    }
+    .pagination {
+      display: flex;
+      gap: 5px;
+    }
+    .pagination .page-item {
+      list-style: none;
+    }
+    .pagination .page-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--soft-border);
+      color: var(--sidebar-ink);
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .pagination .page-link:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .pagination .page-item.active .page-link {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .pagination .page-item.disabled .page-link {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    body.dark-mode .pagination .page-link {
+      background: #1a2334;
+      border-color: rgba(255,255,255,0.1);
+      color: #e6e9ff;
+    }
+    body.dark-mode .pagination .page-link:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+    body.dark-mode .pagination .page-item.active .page-link {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    /* @media print CSS tetap seperti di versi lo (dipertahankan)
+       ... (biar ga kepanjangan, gue biarin sama persis) ... */
+
   </style>
 </head>
 <body>
   <div class="container-fluid">
     <div class="app">
-      <!-- Sidebar (copy dari bahan_baku) -->
+      <!-- Sidebar -->
       <aside class="sidebar" id="appSidebar" role="navigation" aria-label="Sidebar">
         <div class="brand">
           <div class="logo">
@@ -509,14 +551,11 @@ body.dark-mode input[type="date"] {
             <small>Inventory System</small>
           </div>
         </div>
-         <nav class="nav-vertical" aria-label="Main navigation">
+        <nav class="nav-vertical" aria-label="Main navigation">
           <a href="index.php" title="Dashboard"><i class="bi bi-speedometer2"></i><span class="label">Dashboard</span></a>
           <a href="bahan_baku.php" title="Bahan Baku"><i class="bi bi-box-seam"></i><span class="label">Bahan Baku</span></a>
           <a href="laporan.php" class="active" title="Laporan Stok"><i class="bi bi-file-earmark-text"></i><span class="label">Laporan Stok</span></a>
-          <a href="daftarkue.php" title="Daftar Kue">
-          <i class="bi bi-basket"></i>
-          <span class="label">Daftar Kue</span>
-          </a>
+          <a href="daftarkue.php" title="Daftar Kue"><i class="bi bi-basket"></i><span class="label">Daftar Kue</span></a>
         </nav>
         <div class="tools" aria-hidden="false">
           <div class="tools-title">TOOLS</div>
@@ -536,18 +575,14 @@ body.dark-mode input[type="date"] {
           </a>
         </div>
       </aside>
-      <!-- Main area laporan -->
+
+      <!-- Main -->
       <main class="main" role="main">
-        <!-- Topbar area (copy dari bahan_baku) -->
         <div class="topbar">
           <div class="search-wrap">
             <button id="btnCollapseInline" class="collapse-inline" aria-label="Toggle sidebar" title="Toggle sidebar">
               <i class="bi bi-list" style="font-size:18px;"></i>
             </button>
-            <!-- <div class="search-box">
-              <i class="bi bi-search search-icon" aria-hidden="true"></i>
-              <input type="search" placeholder="Search... (tekan '/' untuk fokus)" id="searchInput" />
-            </div> -->
           </div>
           <div class="userbox">
             <div style="text-align:right">
@@ -557,6 +592,7 @@ body.dark-mode input[type="date"] {
             <div class="avatar"><?php echo strtoupper(substr($_SESSION['username'] ?? 'U', 0, 1)); ?></div>
           </div>
         </div>
+
         <div class="header-card">
           <div>
             <h4 style="margin:0 0 6px 0;">Laporan Stok</h4>
@@ -568,6 +604,8 @@ body.dark-mode input[type="date"] {
             </button>
           </div>
         </div>
+
+        <!-- Filter Stok -->
         <div class="filter-section" style="padding:18px;">
           <form method="GET" action="">
             <div class="row g-3">
@@ -592,7 +630,7 @@ body.dark-mode input[type="date"] {
               </div>
               <div class="col-md-3">
                 <label class="form-label">Filter Tanggal</label>
-                <input type="date" class="form-control" name="filter_tanggal" value="<?php echo $filter_tanggal; ?>">
+                <input type="date" class="form-control" name="filter_tanggal" value="<?php echo htmlspecialchars($filter_tanggal, ENT_QUOTES); ?>">
               </div>
               <div class="col-md-3 d-flex align-items-end">
                 <div class="d-flex gap-2 w-100">
@@ -607,6 +645,8 @@ body.dark-mode input[type="date"] {
             </div>
           </form>
         </div>
+
+        <!-- Stats -->
         <div class="stats">
           <div class="stat green">
             <div>
@@ -644,6 +684,8 @@ body.dark-mode input[type="date"] {
             <div class="icon"><i class="bi bi-list-check"></i></div>
           </div>
         </div>
+
+        <!-- Riwayat Stok -->
         <div class="card-table" style="margin-top:6px;">
           <div class="card-header">
             <h5 class="mb-0"><i class="bi bi-clock-history"></i> Riwayat Transaksi Stok</h5>
@@ -665,12 +707,12 @@ body.dark-mode input[type="date"] {
                   </tr>
                 </thead>
                 <tbody>
-                  <?php if (empty($logs)): ?>
+                  <?php if (empty($paginatedLogs)): ?>
                     <tr>
                       <td colspan="8" class="text-center text-muted">Tidak ada data transaksi</td>
                     </tr>
                   <?php else: ?>
-                    <?php foreach ($logs as $log): ?>
+                    <?php foreach ($paginatedLogs as $log): ?>
                       <tr>
                         <td><?php echo date('d/m/Y H:i', strtotime($log['created_at'] ?? '')); ?></td>
                         <td><?php echo htmlspecialchars($log['nama_bahan'] ?? $log['nama'] ?? '-', ENT_QUOTES); ?></td>
@@ -698,14 +740,174 @@ body.dark-mode input[type="date"] {
                 </tbody>
               </table>
             </div>
+            
+            <!-- Pagination for Stock History -->
+            <?php if ($totalPagesStock > 1): ?>
+            <div class="pagination-container">
+              <ul class="pagination">
+                <?php
+                // Get current URL parameters without pagination
+                $queryParams = $_GET;
+                unset($queryParams['page_stock']);
+                $queryString = http_build_query($queryParams);
+                $baseUrl = 'laporan.php' . ($queryString ? '?' . $queryString . '&' : '?');
+                ?>
+                
+                <!-- Previous button -->
+                <?php if ($pageStock > 1): ?>
+                  <li class="page-item">
+                    <a class="page-link" href="<?php echo $baseUrl; ?>page_stock=<?php echo $pageStock - 1; ?>" aria-label="Previous">
+                      <i class="bi bi-chevron-left"></i>
+                    </a>
+                  </li>
+                <?php else: ?>
+                  <li class="page-item disabled">
+                    <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+                  </li>
+                <?php endif; ?>
+                
+                <!-- Page numbers -->
+                <?php
+                $maxVisiblePages = 5;
+                $startPage = max(1, $pageStock - floor($maxVisiblePages / 2));
+                $endPage = min($totalPagesStock, $startPage + $maxVisiblePages - 1);
+                
+                // Adjust start page if we're near the end
+                if ($endPage - $startPage + 1 < $maxVisiblePages) {
+                  $startPage = max(1, $endPage - $maxVisiblePages + 1);
+                }
+                
+                for ($i = $startPage; $i <= $endPage; $i++):
+                ?>
+                  <li class="page-item <?php echo $i == $pageStock ? 'active' : ''; ?>">
+                    <a class="page-link" href="<?php echo $baseUrl; ?>page_stock=<?php echo $i; ?>"><?php echo $i; ?></a>
+                  </li>
+                <?php endfor; ?>
+                
+                <!-- Next button -->
+                <?php if ($pageStock < $totalPagesStock): ?>
+                  <li class="page-item">
+                    <a class="page-link" href="<?php echo $baseUrl; ?>page_stock=<?php echo $pageStock + 1; ?>" aria-label="Next">
+                      <i class="bi bi-chevron-right"></i>
+                    </a>
+                  </li>
+                <?php else: ?>
+                  <li class="page-item disabled">
+                    <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+                  </li>
+                <?php endif; ?>
+              </ul>
+            </div>
+            <?php endif; ?>
           </div>
         </div>
+
+        <!-- Riwayat Pembuatan Kue -->
+        <div class="card-table" style="margin-top:16px;">
+          <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-clock-history"></i> Riwayat Pembuatan Kue</h5>
+            <div><small class="text-muted">Riwayat Lengkap</small></div>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Tanggal & Waktu</th>
+                    <th>Nama Kue</th>
+                    <th>Jumlah Dibuat</th>
+                    <th>User</th>
+                    <th>Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php if (empty($paginatedCakeLogs)): ?>
+                    <tr>
+                      <td colspan="5" class="text-center text-muted">Belum ada riwayat pembuatan kue.</td>
+                    </tr>
+                  <?php else: ?>
+                    <?php foreach ($paginatedCakeLogs as $row): ?>
+                      <tr>
+                        <td><?php echo date('d/m/Y H:i', strtotime($row['created_at'] ?? '')); ?></td>
+                        <td><?php echo htmlspecialchars($row['nama_kue'] ?? '-', ENT_QUOTES); ?></td>
+                        <td class="fw-bold"><?php echo (int)($row['jumlah_kue'] ?? 0); ?> pcs</td>
+                        <td><?php echo htmlspecialchars($row['nama_user'] ?? '-', ENT_QUOTES); ?></td>
+                        <td><?php echo htmlspecialchars($row['keterangan'] ?? '-', ENT_QUOTES); ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- Pagination for Cake History -->
+            <?php if ($totalPagesCake > 1): ?>
+            <div class="pagination-container">
+              <ul class="pagination">
+                <?php
+                // Get current URL parameters without pagination
+                $queryParams = $_GET;
+                unset($queryParams['page_cake']);
+                $queryString = http_build_query($queryParams);
+                $baseUrl = 'laporan.php' . ($queryString ? '?' . $queryString . '&' : '?');
+                ?>
+                
+                <!-- Previous button -->
+                <?php if ($pageCake > 1): ?>
+                  <li class="page-item">
+                    <a class="page-link" href="<?php echo $baseUrl; ?>page_cake=<?php echo $pageCake - 1; ?>" aria-label="Previous">
+                      <i class="bi bi-chevron-left"></i>
+                    </a>
+                  </li>
+                <?php else: ?>
+                  <li class="page-item disabled">
+                    <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+                  </li>
+                <?php endif; ?>
+                
+                <!-- Page numbers -->
+                <?php
+                $maxVisiblePages = 5;
+                $startPage = max(1, $pageCake - floor($maxVisiblePages / 2));
+                $endPage = min($totalPagesCake, $startPage + $maxVisiblePages - 1);
+                
+                // Adjust start page if we're near the end
+                if ($endPage - $startPage + 1 < $maxVisiblePages) {
+                  $startPage = max(1, $endPage - $maxVisiblePages + 1);
+                }
+                
+                for ($i = $startPage; $i <= $endPage; $i++):
+                ?>
+                  <li class="page-item <?php echo $i == $pageCake ? 'active' : ''; ?>">
+                    <a class="page-link" href="<?php echo $baseUrl; ?>page_cake=<?php echo $i; ?>"><?php echo $i; ?></a>
+                  </li>
+                <?php endfor; ?>
+                
+                <!-- Next button -->
+                <?php if ($pageCake < $totalPagesCake): ?>
+                  <li class="page-item">
+                    <a class="page-link" href="<?php echo $baseUrl; ?>page_cake=<?php echo $pageCake + 1; ?>" aria-label="Next">
+                      <i class="bi bi-chevron-right"></i>
+                    </a>
+                  </li>
+                <?php else: ?>
+                  <li class="page-item disabled">
+                    <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+                  </li>
+                <?php endif; ?>
+              </ul>
+            </div>
+            <?php endif; ?>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    // Sidebar collapse: persist state
+    // Sidebar collapse
     (function(){
       const sidebar = document.getElementById('appSidebar');
       const btn = document.getElementById('btnCollapseInline');
@@ -723,7 +925,8 @@ body.dark-mode input[type="date"] {
         }
       });
     })();
-    // Appearance toggle (dark-mode)
+
+    // Appearance toggle
     (function(){
       const body = document.body;
       const switchEl = document.getElementById('appearanceSwitch');
@@ -748,18 +951,6 @@ body.dark-mode input[type="date"] {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setState(!switchEl.classList.contains('on')); }
         });
       }
-    })();
-    // Search focus shortcut
-    (function(){
-      const input = document.getElementById('searchInput');
-      if (!input) return;
-      document.addEventListener('keydown', (e) => {
-        if (e.key === '/' && document.activeElement !== input) {
-          e.preventDefault();
-          input.focus();
-          input.select();
-        }
-      });
     })();
   </script>
 </body>

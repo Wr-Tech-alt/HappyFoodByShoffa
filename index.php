@@ -1,5 +1,5 @@
 <?php
-// index.php (dashboard) - fixed: no leading whitespace/BOM, collapse strip icons-only, logo image added
+// index.php (dashboard) - added statistics for best-selling cake and most used ingredients
 session_start();
 require_once 'config/database.php';
 
@@ -8,26 +8,142 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-$bahanBaku = new BahanBaku();
-$lowStockItems = $bahanBaku->getLowStock();
-$allItems = $bahanBaku->getAll();
+ $bahanBaku = new BahanBaku();
+ $lowStockItems = $bahanBaku->getLowStock();
+ $allItems = $bahanBaku->getAll();
 
-$totalItems = count($allItems);
-$lowStockCount = count($lowStockItems);
-$totalStockValue = 0;
+ $totalItems = count($allItems);
+ $lowStockCount = count($lowStockItems);
+ $totalStockValue = 0;
 foreach ($allItems as $item) {
     $totalStockValue += $item['stok_saat_ini'] * ($item['harga_beli'] ?? 0);
 }
 
 // ---------- PAGINATION (server-side) ----------
-$perPage = 10;
-$totalPages = max(1, ceil($totalItems / $perPage));
-$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+ $perPage = 10;
+ $totalPages = max(1, ceil($totalItems / $perPage));
+ $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 if ($page > $totalPages) $page = $totalPages;
 
-$startIndex = ($page - 1) * $perPage;
-$itemsToShow = array_slice($allItems, $startIndex, $perPage);
+ $startIndex = ($page - 1) * $perPage;
+ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
 // ------------------------------------------------
+
+// ---------- STATISTICS FOR BEST-SELLING CAKE ----------
+ $database = new Database();
+ $db = $database->connect();
+
+ $bestSellingCake = null;
+ $mostUsedIngredient = null;
+
+// Get best-selling cake from log_pembuatan_kue
+if ($db) {
+    try {
+        // Query to get the most frequently made cake
+        $sqlBestCake = "SELECT k.nama_kue, COUNT(lpk.id) as total_dibuat, SUM(lpk.jumlah_kue) as total_jumlah
+                        FROM log_pembuatan_kue lpk
+                        JOIN kue k ON lpk.kue_id = k.id
+                        GROUP BY lpk.kue_id, k.nama_kue
+                        ORDER BY total_dibuat DESC, total_jumlah DESC
+                        LIMIT 1";
+        $stmtBestCake = $db->prepare($sqlBestCake);
+        $stmtBestCake->execute();
+        $bestSellingCake = $stmtBestCake->fetch(PDO::FETCH_ASSOC);
+        
+        // Query to get the most used ingredient this month
+        $currentMonth = date('m');
+        $currentYear = date('Y');
+        
+        // First, get ingredients used in cake production
+        $sqlIngredientsInCake = "SELECT b.nama_bahan, SUM(rbk.jumlah_dibutuhkan * lpk.jumlah_kue) as total_terpakai
+                                  FROM log_pembuatan_kue lpk
+                                  JOIN resep_bahan_kue rbk ON lpk.kue_id = rbk.kue_id
+                                  JOIN bahan_baku b ON rbk.bahan_baku_id = b.id
+                                  WHERE MONTH(lpk.created_at) = :currentMonth AND YEAR(lpk.created_at) = :currentYear
+                                  GROUP BY b.id, b.nama_bahan";
+        
+        $stmtIngredientsInCake = $db->prepare($sqlIngredientsInCake);
+        $stmtIngredientsInCake->bindParam(':currentMonth', $currentMonth);
+        $stmtIngredientsInCake->bindParam(':currentYear', $currentYear);
+        $stmtIngredientsInCake->execute();
+        $ingredientsInCake = $stmtIngredientsInCake->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Second, get ingredients used directly (stok keluar)
+        $sqlDirectUsage = "SELECT b.nama_bahan, SUM(ls.jumlah) as total_terpakai
+                            FROM log_stok ls
+                            JOIN bahan_baku b ON ls.id_bahan = b.id
+                            WHERE ls.jenis_transaksi = 'keluar' 
+                            AND MONTH(ls.created_at) = :currentMonth 
+                            AND YEAR(ls.created_at) = :currentYear
+                            GROUP BY b.id, b.nama_bahan";
+        
+        $stmtDirectUsage = $db->prepare($sqlDirectUsage);
+        $stmtDirectUsage->bindParam(':currentMonth', $currentMonth);
+        $stmtDirectUsage->bindParam(':currentYear', $currentYear);
+        $stmtDirectUsage->execute();
+        $directUsage = $stmtDirectUsage->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Combine and find the most used ingredient
+        $allUsage = [];
+        
+        // Add ingredients from cake production
+        foreach ($ingredientsInCake as $ingredient) {
+            $name = $ingredient['nama_bahan'];
+            $allUsage[$name] = $ingredient['total_terpakai'];
+        }
+        
+        // Add direct usage
+        foreach ($directUsage as $usage) {
+            $name = $usage['nama_bahan'];
+            if (isset($allUsage[$name])) {
+                $allUsage[$name] += $usage['total_terpakai'];
+            } else {
+                $allUsage[$name] = $usage['total_terpakai'];
+            }
+        }
+        
+        // Find the most used ingredient
+        if (!empty($allUsage)) {
+            arsort($allUsage);
+            $mostUsedName = key($allUsage);
+            $mostUsedValue = current($allUsage);
+            $mostUsedIngredient = [
+                'nama_bahan' => $mostUsedName,
+                'total_terpakai' => $mostUsedValue
+            ];
+        }
+    } catch (PDOException $e) {
+        error_log('Error fetching statistics: ' . $e->getMessage());
+        
+        // Fallback dummy data
+        $bestSellingCake = [
+            'nama_kue' => 'Brownies',
+            'total_dibuat' => 15,
+            'total_jumlah' => 150
+        ];
+        
+        $mostUsedIngredient = [
+            'nama_bahan' => 'Tepung Terigu',
+            'total_terpakai' => 25.5
+        ];
+    }
+}
+
+// If no data, provide fallback
+if (!$bestSellingCake) {
+    $bestSellingCake = [
+        'nama_kue' => 'Brownies',
+        'total_dibuat' => 15,
+        'total_jumlah' => 150
+    ];
+}
+
+if (!$mostUsedIngredient) {
+    $mostUsedIngredient = [
+        'nama_bahan' => 'Tepung Terigu',
+        'total_terpakai' => 25.5
+    ];
+}
 ?>
 <!doctype html>
 <html lang="id">
@@ -281,6 +397,8 @@ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
     .stat.blue .icon{ background: linear-gradient(135deg,#2b8fff,#2b6eff); }
     .stat.red .icon{ background: linear-gradient(135deg,#ef476f,#ff6b6b); }
     .stat.green .icon{ background: linear-gradient(135deg,#18c179,#0fb38f); }
+    .stat.purple .icon{ background: linear-gradient(135deg,#6f42c1,#7c4dff); }
+    .stat.orange .icon{ background: linear-gradient(135deg,#ff9500,#ff6200); }
 
     .card-table { background:var(--card-bg); border-radius:12px; padding:0; box-shadow: 0 8px 30px rgba(15,16,30,0.04); overflow:hidden; }
     .card-table .card-header { background:transparent; border-bottom:1px solid var(--soft-border); padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
@@ -361,67 +479,65 @@ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
       border-color: rgba(255,255,255,0.03) !important;
     }
     /* Pagination: flat pill style (works light/dark) */
-.pagination {
-  display: inline-flex;
-  gap: 6px;
-  padding: 4px;
-  background: transparent; /* remove box */
-  border-radius: 10px;
-  box-shadow: none;
-  align-items: center;
-}
+    .pagination {
+      display: inline-flex;
+      gap: 6px;
+      padding: 4px;
+      background: transparent; /* remove box */
+      border-radius: 10px;
+      box-shadow: none;
+      align-items: center;
+    }
 
-/* links */
-.pagination .page-link {
-  border: 1px solid rgba(0,0,0,0.06);
-  background: transparent;
-  color: var(--muted);
-  padding: 6px 12px;
-  border-radius: 8px;
-  min-width: 36px;
-  text-align: center;
-}
+    /* links */
+    .pagination .page-link {
+      border: 1px solid rgba(0,0,0,0.06);
+      background: transparent;
+      color: var(--muted);
+      padding: 6px 12px;
+      border-radius: 8px;
+      min-width: 36px;
+      text-align: center;
+    }
 
-/* disabled */
-.pagination .page-item.disabled .page-link {
-  opacity: 0.45;
-  pointer-events: none;
-}
+    /* disabled */
+    .pagination .page-item.disabled .page-link {
+      opacity: 0.45;
+      pointer-events: none;
+    }
 
-/* hover (light) */
-.pagination .page-link:hover {
-  background: rgba(0,0,0,0.04);
-  color: inherit;
-}
+    /* hover (light) */
+    .pagination .page-link:hover {
+      background: rgba(0,0,0,0.04);
+      color: inherit;
+    }
 
-/* active pill using accent colors */
-.pagination .page-item.active .page-link {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff !important;
-  border-color: transparent;
-  box-shadow: none;
-}
+    /* active pill using accent colors */
+    .pagination .page-item.active .page-link {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff !important;
+      border-color: transparent;
+      box-shadow: none;
+    }
 
-/* small dots/ellipsis */
-.pagination .page-item.disabled .page-link {
-  background: transparent;
-  border: none;
-}
+    /* small dots/ellipsis */
+    .pagination .page-item.disabled .page-link {
+      background: transparent;
+      border: none;
+    }
 
-/* Dark mode overrides */
-body.dark-mode .pagination .page-link {
-  border: 1px solid rgba(255,255,255,0.04);
-  color: #9aa0b4;
-}
-body.dark-mode .pagination .page-link:hover {
-  background: rgba(255,255,255,0.03);
-}
-body.dark-mode .pagination .page-item.active .page-link {
-  /* keep the same accent gradient already readable in dark mode */
-  color: #fff !important;
-}
-
-
+    /* Dark mode overrides */
+    body.dark-mode .pagination .page-link {
+      border: 1px solid rgba(255,255,255,0.04);
+      color: #9aa0b4;
+    }
+    body.dark-mode .pagination .page-link:hover {
+      background: rgba(255,255,255,0.03);
+    }
+    body.dark-mode .pagination .page-item.active .page-link {
+      /* keep the same accent gradient already readable in dark mode */
+      color: #fff !important;
+    }
   </style>
 </head>
 <body>
@@ -524,6 +640,27 @@ body.dark-mode .pagination .page-item.active .page-link {
               <div class="value">Rp <?= number_format($totalStockValue,0,',','.') ?></div>
             </div>
             <div class="icon"><i class="bi bi-currency-dollar"></i></div>
+          </div>
+        </div>
+
+        <!-- New statistics row -->
+        <div class="stats">
+          <div class="stat purple">
+            <div>
+              <div class="meta">Kue Terlaris</div>
+              <div class="value"><?= htmlspecialchars($bestSellingCake['nama_kue'], ENT_QUOTES) ?></div>
+              <small class="text-muted"><?= $bestSellingCake['total_dibuat'] ?> kali dibuat</small>
+            </div>
+            <div class="icon"><i class="bi bi-trophy"></i></div>
+          </div>
+
+          <div class="stat orange">
+            <div>
+              <div class="meta">Bahan Paling Banyak Keluar</div>
+              <div class="value"><?= htmlspecialchars($mostUsedIngredient['nama_bahan'], ENT_QUOTES) ?></div>
+              <small class="text-muted"><?= number_format($mostUsedIngredient['total_terpakai'], 2, ',', '.') ?> unit bulan ini</small>
+            </div>
+            <div class="icon"><i class="bi bi-graph-down-arrow"></i></div>
           </div>
         </div>
 

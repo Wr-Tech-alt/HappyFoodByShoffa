@@ -65,10 +65,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $response = ['success' => false, 'message' => 'Terjadi kesalahan.'];
 
     if ($db) {
-        $kode_kue = $_POST['kode_kue'];
-        $nama_kue = $_POST['nama_kue'];
-        $deskripsi = $_POST['deskripsi'];
-        $harga_jual = $_POST['harga_jual'];
+        $kode_kue = $_POST['kode_kue'] ?? '';
+        $nama_kue = $_POST['nama_kue'] ?? '';
+        $deskripsi = $_POST['deskripsi'] ?? '';
+        $harga_jual = $_POST['harga_jual'] ?? 0;
         $nama_foto = null;
 
         // --- LOGIKA UPLOAD FOTO ---
@@ -184,9 +184,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // --- LOGIKA UNTUK MENAMPILKAN DAFTAR KUE ---
- $cakes = [];
- $database = new Database();
- $db = $database->connect();
+$cakes = [];
+$database = new Database();
+$db = $database->connect();
 
 if ($db) {
     $sql = "SELECT id, kode_kue, nama_kue, deskripsi, foto, harga_jual FROM kue ORDER BY nama_kue ASC";
@@ -223,7 +223,6 @@ if ($db) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-      /* ... (CSS tidak berubah kecuali tambahan kecil di bawah) ... */
       :root{--accent:#6f42c1;--accent-2:#7c4dff;--muted:#6c757d;--page-bg:#f6f7fb;--card-bg:#ffffff;--sidebar-bg:#ffffff;--sidebar-ink:#2b2b3b;--soft-border:#eef0f4;}
       html,body{height:100%; min-height:100%; margin:0; font-family: "Inter", "Raleway", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--page-bg); color:#222;}
       body.dark-mode{--page-bg: #0f172a;--card-bg: #1a2334;--sidebar-bg: #1a2334;--sidebar-ink: #e6e9ff;--muted: #9aa0b4;--soft-border: rgba(255,255,255,0.06); background: var(--page-bg); color: #e6e9ff;}
@@ -302,7 +301,7 @@ if ($db) {
       .cake-resep-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
       .cake-resep-list { font-size:12px; color:var(--muted); margin:0; padding-left:20px; }
       .cake-resep-list li { margin-bottom:4px; }
-      .cake-resep-list.collapsed { max-height:80px; overflow:hidden; } /* tidak krusial, js yang ngatur li */
+      .cake-resep-list.collapsed { max-height:80px; overflow:hidden; }
       .cake-resep-toggle { margin-top:4px; font-size:12px; font-weight:600; color:var(--accent); background:none; border:none; padding:0; cursor:pointer; }
       body.dark-mode .cake-resep-toggle { color:#c4b5fd; }
       .cake-footer { display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
@@ -529,6 +528,10 @@ if ($db) {
                         <label for="jumlahKue" class="form-label">Jumlah Kue</label>
                         <input type="number" class="form-control" id="jumlahKue" min="1" value="1">
                     </div>
+                    <div class="mb-3">
+                        <label for="keteranganKue" class="form-label">Keterangan (opsional)</label>
+                        <textarea class="form-control" id="keteranganKue" rows="2" placeholder="Contoh: Pesanan banyak, buat kue percobaan, dll"></textarea>
+                    </div>
                     <div id="detailResep"></div>
                 </div>
                 <div class="modal-footer">
@@ -568,20 +571,53 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('appSidebar');
     const btn = document.getElementById('btnCollapseInline');
     if (!sidebar || !btn) return;
-    function setCollapsed(collapsed){ if (collapsed) sidebar.classList.add('collapsed'); else sidebar.classList.remove('collapsed'); localStorage.setItem('hf_sidebar_collapsed', collapsed ? '1' : '0'); }
-    const stored = localStorage.getItem('hf_sidebar_collapsed'); const initial = stored === '1'; setCollapsed(initial);
-    btn.addEventListener('click', () => { const isCollapsed = sidebar.classList.contains('collapsed'); setCollapsed(!isCollapsed); });
-    document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { const isCollapsed = sidebar.classList.contains('collapsed'); setCollapsed(!isCollapsed); } });
+    function setCollapsed(collapsed){
+      if (collapsed) sidebar.classList.add('collapsed');
+      else sidebar.classList.remove('collapsed');
+      localStorage.setItem('hf_sidebar_collapsed', collapsed ? '1' : '0');
+    }
+    const stored = localStorage.getItem('hf_sidebar_collapsed');
+    const initial = stored === '1';
+    setCollapsed(initial);
+    btn.addEventListener('click', () => {
+      const isCollapsed = sidebar.classList.contains('collapsed');
+      setCollapsed(!isCollapsed);
+    });
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        const isCollapsed = sidebar.classList.contains('collapsed');
+        setCollapsed(!isCollapsed);
+      }
+    });
   })();
 
   // --- Appearance toggle ---
   (function(){
-    const body = document.body; const switchEl = document.getElementById('appearanceSwitch');
+    const body = document.body;
+    const switchEl = document.getElementById('appearanceSwitch');
     if (!switchEl) return;
-    function setState(isOn){ if (isOn) { switchEl.classList.add('on'); switchEl.setAttribute('aria-checked','true'); body.classList.add('dark-mode'); } else { switchEl.classList.remove('on'); switchEl.setAttribute('aria-checked','false'); body.classList.remove('dark-mode'); } localStorage.setItem('hf_appearance_dark', isOn ? '1' : '0'); }
-    const stored = localStorage.getItem('hf_appearance_dark'); const initialOn = stored === '1'; setState(initialOn);
+    function setState(isOn){
+      if (isOn) {
+        switchEl.classList.add('on');
+        switchEl.setAttribute('aria-checked','true');
+        body.classList.add('dark-mode');
+      } else {
+        switchEl.classList.remove('on');
+        switchEl.setAttribute('aria-checked','false');
+        body.classList.remove('dark-mode');
+      }
+      localStorage.setItem('hf_appearance_dark', isOn ? '1' : '0');
+    }
+    const stored = localStorage.getItem('hf_appearance_dark');
+    const initialOn = stored === '1';
+    setState(initialOn);
     switchEl.addEventListener('click', ()=> setState(!switchEl.classList.contains('on')));
-    switchEl.addEventListener('keydown', (e)=> { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setState(!switchEl.classList.contains('on')); } });
+    switchEl.addEventListener('keydown', (e)=> {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setState(!switchEl.classList.contains('on'));
+      }
+    });
   })();
 
   // --- Client-side clock ---
@@ -606,11 +642,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function applySearch() {
       const q = (input.value || '').toLowerCase().trim(); let visibleCount = 0;
-      cards.forEach(card => { const name = (card.dataset.name || '').toLowerCase(); const matchName = q === '' || name.indexOf(q) !== -1; if (matchName) { card.style.display = ''; visibleCount++; } else { card.style.display = 'none'; } });
+      cards.forEach(card => {
+        const name = (card.dataset.name || '').toLowerCase();
+        const matchName = q === '' || name.indexOf(q) !== -1;
+        if (matchName) { card.style.display = ''; visibleCount++; }
+        else { card.style.display = 'none'; }
+      });
       emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
     }
     input.addEventListener('input', applySearch);
-    document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== input) { e.preventDefault(); input.focus(); input.select(); } });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && document.activeElement !== input) {
+        e.preventDefault();
+        input.focus();
+        input.select();
+      }
+    });
   })();
 
   // --- HELPER: Atur tampilan 2 baris pertama resep ---
@@ -643,8 +690,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const list = this.closest('.cake-resep').querySelector('.cake-resep-list');
         if (!list) return;
         const collapsed = list.dataset.collapsed !== 'false';
-        // toggle: kalau collapsed -> expand, kalau expand -> collapse
-        applyResepCollapse(list, !collapsed ? true : false); // kebalik biar simple
+        applyResepCollapse(list, !collapsed ? true : false);
         const newCollapsed = list.dataset.collapsed !== 'false';
         if (newCollapsed) {
           this.textContent = 'Selengkapnya';
@@ -842,37 +888,65 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  let currentResep = [];
+
   // --- Modal Konfirmasi Pembuatan Kue ---
   window.showBuatKueModal = function(cakeId, namaKue) {
     currentCakeId = cakeId;
-    fetch(`get_resep_kue.php?id=${cakeId}`).then(response => response.json()).then(data => {
+    document.getElementById('jumlahKue').value = 1;
+    document.getElementById('keteranganKue').value = '';
+
+    fetch(`get_resep_kue.php?id=${cakeId}`)
+      .then(response => response.json())
+      .then(data => {
         if (data.success) {
             currentResep = data.resep;
             document.getElementById('namaKueModal').textContent = namaKue;
             const detailResepEl = document.getElementById('detailResep');
             detailResepEl.innerHTML = '<h6>Resep yang akan digunakan:</h6><ul>';
-            data.resep.forEach(item => { detailResepEl.innerHTML += `<li>${item.nama_bahan}: ${item.qty_per_pcs} ${item.satuan} per kue</li>`; });
+            data.resep.forEach(item => {
+              detailResepEl.innerHTML += `<li>${item.nama_bahan}: ${item.qty_per_pcs} ${item.satuan} per kue</li>`;
+            });
             detailResepEl.innerHTML += '</ul>';
             const modal = new bootstrap.Modal(document.getElementById('buatKueModal'));
             modal.show();
         } else { 
             showNotification('Gagal memuat resep kue: ' + data.message, 'danger');
         }
-    }).catch(error => { 
+      }).catch(error => { 
         console.error('Error:', error); 
         showNotification('Terjadi kesalahan saat memuat resep kue', 'danger');
-    });
+      });
   }
   
   const confirmBuatKueBtn = document.getElementById('confirmBuatKue');
   if (confirmBuatKueBtn) {
     confirmBuatKueBtn.addEventListener('click', function() {
-        const jumlahKue = parseInt(document.getElementById('jumlahKue').value);
-        if (jumlahKue < 1) { showNotification('Jumlah kue harus lebih dari 0', 'warning'); return; }
-        fetch('buat_kue.php', { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ cake_id: currentCakeId, jumlah: jumlahKue }) }).then(response => response.json()).then(data => {
+        const jumlahKueInput = document.getElementById('jumlahKue');
+        const ketInput = document.getElementById('keteranganKue');
+        const jumlahKue = parseInt(jumlahKueInput.value, 10);
+        const keterangan = (ketInput.value || '').trim();
+
+        if (isNaN(jumlahKue) || jumlahKue < 1) {
+            showNotification('Jumlah kue harus lebih dari 0', 'warning');
+            jumlahKueInput.focus();
+            return;
+        }
+
+        fetch('buat_kue.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cake_id: currentCakeId,
+                jumlah: jumlahKue,
+                keterangan: keterangan
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
             if (data.success) { 
                 const modal = bootstrap.Modal.getInstance(document.getElementById('buatKueModal')); 
-                modal.hide(); 
+                if (modal) modal.hide(); 
                 showNotification(`Berhasil membuat ${jumlahKue} ${document.getElementById('namaKueModal').textContent}! Stok bahan telah diperbarui.`, 'success');
             } else { 
                 showNotification('Gagal membuat kue: ' + data.message, 'danger'); 
