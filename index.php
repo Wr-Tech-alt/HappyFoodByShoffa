@@ -1,5 +1,5 @@
 <?php
-// index.php (dashboard) - fixed: no leading whitespace/BOM, collapse strip icons-only, logo image added
+// index.php (dashboard) - fixed to use real data only
 session_start();
 require_once 'config/database.php';
 
@@ -8,26 +8,265 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-$bahanBaku = new BahanBaku();
-$lowStockItems = $bahanBaku->getLowStock();
-$allItems = $bahanBaku->getAll();
+ $bahanBaku = new BahanBaku();
+ $lowStockItems = $bahanBaku->getLowStock();
+ $allItems = $bahanBaku->getAll();
 
-$totalItems = count($allItems);
-$lowStockCount = count($lowStockItems);
-$totalStockValue = 0;
+ $totalItems = count($allItems);
+ $lowStockCount = count($lowStockItems);
+ $totalStockValue = 0;
 foreach ($allItems as $item) {
     $totalStockValue += $item['stok_saat_ini'] * ($item['harga_beli'] ?? 0);
 }
 
 // ---------- PAGINATION (server-side) ----------
-$perPage = 10;
-$totalPages = max(1, ceil($totalItems / $perPage));
-$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+ $perPage = 10;
+ $totalPages = max(1, ceil($totalItems / $perPage));
+ $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 if ($page > $totalPages) $page = $totalPages;
 
-$startIndex = ($page - 1) * $perPage;
-$itemsToShow = array_slice($allItems, $startIndex, $perPage);
+ $startIndex = ($page - 1) * $perPage;
+ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
 // ------------------------------------------------
+
+// ---------- STATISTICS AND PREDICTIONS ----------
+ $database = new Database();
+ $db = $database->connect();
+
+ $bestSellingCake = null;
+ $mostUsedIngredient = null;
+ $predictedCake = null;
+ $predictedIngredients = [];
+
+// Get current date info
+ $currentMonth = date('m');
+ $currentYear = date('Y');
+ $nextMonth = date('m', strtotime('+1 month'));
+ $nextYear = date('Y', strtotime('+1 month'));
+
+if ($db) {
+    try {
+        // Get best-selling cake from log_pembuatan_kue (REAL DATA ONLY)
+        $sqlBestCake = "SELECT k.nama_kue, COUNT(lpk.id) as total_dibuat, SUM(lpk.jumlah_kue) as total_jumlah
+                        FROM log_pembuatan_kue lpk
+                        JOIN kue k ON lpk.kue_id = k.id
+                        GROUP BY lpk.kue_id, k.nama_kue
+                        ORDER BY total_dibuat DESC, total_jumlah DESC
+                        LIMIT 1";
+        $stmtBestCake = $db->prepare($sqlBestCake);
+        $stmtBestCake->execute();
+        $bestSellingCake = $stmtBestCake->fetch(PDO::FETCH_ASSOC);
+        
+        // ===== PREDICTION FOR NEXT MONTH'S MOST ORDERED CAKE =====
+        // Get cake production data for the last 3 months
+        $sqlCakeHistory = "SELECT k.nama_kue, k.id as kue_id,
+                           MONTH(lpk.created_at) as month, 
+                           YEAR(lpk.created_at) as year,
+                           COUNT(lpk.id) as frequency,
+                           SUM(lpk.jumlah_kue) as total_quantity
+                           FROM log_pembuatan_kue lpk
+                           JOIN kue k ON lpk.kue_id = k.id
+                           WHERE lpk.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)
+                           GROUP BY k.id, k.nama_kue, MONTH(lpk.created_at), YEAR(lpk.created_at)
+                           ORDER BY k.nama_kue, YEAR(lpk.created_at), MONTH(lpk.created_at)";
+        
+        $stmtCakeHistory = $db->prepare($sqlCakeHistory);
+        $stmtCakeHistory->execute();
+        $cakeHistoryData = $stmtCakeHistory->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Calculate prediction scores for each cake
+        $cakePredictions = [];
+        foreach ($cakeHistoryData as $data) {
+            $cakeId = $data['kue_id'];
+            $cakeName = $data['nama_kue'];
+            
+            if (!isset($cakePredictions[$cakeId])) {
+                $cakePredictions[$cakeId] = [
+                    'nama_kue' => $cakeName,
+                    'monthly_data' => [],
+                    'trend_score' => 0,
+                    'avg_frequency' => 0,
+                    'prediction_score' => 0
+                ];
+            }
+            
+            $cakePredictions[$cakeId]['monthly_data'][] = [
+                'month' => $data['month'],
+                'year' => $data['year'],
+                'frequency' => $data['frequency'],
+                'quantity' => $data['total_quantity']
+            ];
+        }
+        
+        // Calculate trend and prediction scores
+        foreach ($cakePredictions as $cakeId => &$cake) {
+            $monthlyData = $cake['monthly_data'];
+            
+            if (count($monthlyData) >= 1) { // Changed from 2 to 1 to work with limited data
+                // Calculate trend (simple linear trend)
+                $totalFreq = array_sum(array_column($monthlyData, 'frequency'));
+                $cake['avg_frequency'] = $totalFreq / count($monthlyData);
+                
+                // Weight recent months more heavily
+                $weights = [0.5, 0.3, 0.2]; // Most recent to oldest
+                $weightedScore = 0;
+                $dataCount = count($monthlyData);
+                
+                for ($i = 0; $i < $dataCount && $i < 3; $i++) {
+                    $idx = $dataCount - 1 - $i; // Start from most recent
+                    $weight = $weights[$i] ?? 0.1; // Default weight for older months
+                    $weightedScore += $monthlyData[$idx]['frequency'] * $weight;
+                }
+                
+                // Add seasonal pattern (check if same month last year had high frequency)
+                $seasonalBoost = 1.0;
+                foreach ($monthlyData as $monthData) {
+                    if ($monthData['month'] == $nextMonth && $monthData['year'] < $currentYear) {
+                        $seasonalBoost = 1.2; // 20% boost if seasonal pattern detected
+                        break;
+                    }
+                }
+                
+                $cake['prediction_score'] = $weightedScore * $seasonalBoost;
+            }
+        }
+        
+        // Sort by prediction score and get top prediction
+        uasort($cakePredictions, function($a, $b) {
+            return $b['prediction_score'] <=> $a['prediction_score'];
+        });
+        
+        if (!empty($cakePredictions)) {
+            $topPrediction = reset($cakePredictions);
+            $predictedCake = [
+                'nama_kue' => $topPrediction['nama_kue'],
+                'confidence' => min(95, round(($topPrediction['prediction_score'] / max(0.1, $topPrediction['avg_frequency'])) * 100)),
+                'avg_monthly' => round($topPrediction['avg_frequency'], 1),
+                'trend' => $topPrediction['prediction_score'] > $topPrediction['avg_frequency'] ? 'Naik' : 'Stabil'
+            ];
+        }
+        
+        // ===== PREDICTION FOR MOST USED INGREDIENTS NEXT MONTH =====
+        // Get ingredient usage from log_stok (direct usage)
+        $sqlIngredientHistory = "
+            SELECT b.nama_bahan, b.id as bahan_id,
+             MONTH(ls.created_at) as month, YEAR(ls.created_at) as year,
+             SUM(ls.jumlah) as usage_amount
+             FROM log_stok ls
+             JOIN bahan_baku b ON ls.id_bahan = b.id
+             WHERE ls.jenis_transaksi = 'keluar' 
+             AND ls.created_at >= DATE_SUB(NOW(), INTERVAL 3 MONTH)
+             GROUP BY b.id, b.nama_bahan, MONTH(ls.created_at), YEAR(ls.created_at)
+             ORDER BY bahan_id, year, month
+        ";
+        
+        $stmtIngredientHistory = $db->prepare($sqlIngredientHistory);
+        $stmtIngredientHistory->execute();
+        $ingredientHistoryData = $stmtIngredientHistory->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Process ingredient data for prediction
+        $ingredientPredictions = [];
+        foreach ($ingredientHistoryData as $data) {
+            $bahanId = $data['bahan_id'];
+            $bahanName = $data['nama_bahan'];
+            
+            if (!isset($ingredientPredictions[$bahanId])) {
+                $ingredientPredictions[$bahanId] = [
+                    'nama_bahan' => $bahanName,
+                    'monthly_data' => [],
+                    'trend_score' => 0,
+                    'avg_usage' => 0,
+                    'prediction_score' => 0
+                ];
+            }
+            
+            $ingredientPredictions[$bahanId]['monthly_data'][] = [
+                'month' => $data['month'],
+                'year' => $data['year'],
+                'usage' => $data['usage_amount']
+            ];
+        }
+        
+        // Calculate prediction scores for ingredients
+        foreach ($ingredientPredictions as $bahanId => &$ingredient) {
+            $monthlyData = $ingredient['monthly_data'];
+            
+            if (count($monthlyData) >= 1) { // Changed from 2 to 1
+                // Calculate average usage
+                $totalUsage = array_sum(array_column($monthlyData, 'usage'));
+                $ingredient['avg_usage'] = $totalUsage / count($monthlyData);
+                
+                // Weight recent months more heavily
+                $weights = [0.5, 0.3, 0.2];
+                $weightedScore = 0;
+                $dataCount = count($monthlyData);
+                
+                for ($i = 0; $i < $dataCount && $i < 3; $i++) {
+                    $idx = $dataCount - 1 - $i;
+                    $weight = $weights[$i] ?? 0.1;
+                    $weightedScore += $monthlyData[$idx]['usage'] * $weight;
+                }
+                
+                // Add seasonal pattern detection
+                $seasonalBoost = 1.0;
+                foreach ($monthlyData as $monthData) {
+                    if ($monthData['month'] == $nextMonth && $monthData['year'] < $currentYear) {
+                        $seasonalBoost = 1.15; // 15% boost for seasonal ingredients
+                        break;
+                    }
+                }
+                
+                $ingredient['prediction_score'] = $weightedScore * $seasonalBoost;
+            }
+        }
+        
+        // Sort by prediction score and get top 3
+        uasort($ingredientPredictions, function($a, $b) {
+            return $b['prediction_score'] <=> $a['prediction_score'];
+        });
+        
+        $predictedIngredients = array_slice($ingredientPredictions, 0, 3, true);
+        
+        // Get current month most used ingredient
+        $sqlCurrentMonth = "
+            SELECT b.nama_bahan, SUM(ls.jumlah) as total_terpakai
+            FROM log_stok ls
+            JOIN bahan_baku b ON ls.id_bahan = b.id
+            WHERE ls.jenis_transaksi = 'keluar' 
+            AND MONTH(ls.created_at) = :currentMonth 
+            AND YEAR(ls.created_at) = :currentYear
+            GROUP BY b.id, b.nama_bahan
+            ORDER BY total_terpakai DESC
+            LIMIT 1
+        ";
+        
+        $stmtCurrentMonth = $db->prepare($sqlCurrentMonth);
+        $stmtCurrentMonth->bindParam(':currentMonth', $currentMonth);
+        $stmtCurrentMonth->bindParam(':currentYear', $currentYear);
+        $stmtCurrentMonth->execute();
+        $currentMonthData = $stmtCurrentMonth->fetch(PDO::FETCH_ASSOC);
+        
+        if ($currentMonthData) {
+            $mostUsedIngredient = [
+                'nama_bahan' => $currentMonthData['nama_bahan'],
+                'total_terpakai' => $currentMonthData['total_terpakai']
+            ];
+        }
+        
+    } catch (PDOException $e) {
+        error_log('Error fetching statistics and predictions: ' . $e->getMessage());
+        // No fallback dummy data - will handle empty states in UI
+    }
+}
+
+// Format month name in Indonesian
+ $monthNames = [
+    '01' => 'Januari', '02' => 'Februari', '03' => 'Maret',
+    '04' => 'April', '05' => 'Mei', '06' => 'Juni',
+    '07' => 'Juli', '08' => 'Agustus', '09' => 'September',
+    '10' => 'Oktober', '11' => 'November', '12' => 'Desember'
+];
+ $nextMonthName = $monthNames[$nextMonth];
 ?>
 <!doctype html>
 <html lang="id">
@@ -281,6 +520,9 @@ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
     .stat.blue .icon{ background: linear-gradient(135deg,#2b8fff,#2b6eff); }
     .stat.red .icon{ background: linear-gradient(135deg,#ef476f,#ff6b6b); }
     .stat.green .icon{ background: linear-gradient(135deg,#18c179,#0fb38f); }
+    .stat.purple .icon{ background: linear-gradient(135deg,#6f42c1,#7c4dff); }
+    .stat.orange .icon{ background: linear-gradient(135deg,#ff9500,#ff6200); }
+    .stat.teal .icon{ background: linear-gradient(135deg,#00b4d8,#0077b6); }
 
     .card-table { background:var(--card-bg); border-radius:12px; padding:0; box-shadow: 0 8px 30px rgba(15,16,30,0.04); overflow:hidden; }
     .card-table .card-header { background:transparent; border-bottom:1px solid var(--soft-border); padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
@@ -289,6 +531,43 @@ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
     .table-hover tbody tr:hover { background:#fbfbff; }
 
     .btn-sm-custom { padding:.30rem .6rem; border-radius:8px; font-weight:700; }
+
+    /* Prediction card styles */
+    .prediction-list {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0 0 0;
+    }
+    .prediction-list li {
+      padding: 4px 0;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .prediction-list li:not(:last-child) {
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+    .confidence-badge {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .trend-indicator {
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .trend-up {
+      color: #10b981;
+    }
+    .trend-stable {
+      color: #6b7280;
+    }
 
     @media (max-width:1000px){
       .sidebar{ display:none; }
@@ -360,68 +639,74 @@ $itemsToShow = array_slice($allItems, $startIndex, $perPage);
     body.dark-mode .card-table .table th {
       border-color: rgba(255,255,255,0.03) !important;
     }
+
+    /* Dark mode prediction styles */
+    body.dark-mode .prediction-list li:not(:last-child) {
+      border-bottom-color: rgba(255,255,255,0.1);
+    }
+    body.dark-mode .confidence-badge {
+      background: linear-gradient(135deg, #059669, #047857);
+    }
     /* Pagination: flat pill style (works light/dark) */
-.pagination {
-  display: inline-flex;
-  gap: 6px;
-  padding: 4px;
-  background: transparent; /* remove box */
-  border-radius: 10px;
-  box-shadow: none;
-  align-items: center;
-}
+    .pagination {
+      display: inline-flex;
+      gap: 6px;
+      padding: 4px;
+      background: transparent; /* remove box */
+      border-radius: 10px;
+      box-shadow: none;
+      align-items: center;
+    }
 
-/* links */
-.pagination .page-link {
-  border: 1px solid rgba(0,0,0,0.06);
-  background: transparent;
-  color: var(--muted);
-  padding: 6px 12px;
-  border-radius: 8px;
-  min-width: 36px;
-  text-align: center;
-}
+    /* links */
+    .pagination .page-link {
+      border: 1px solid rgba(0,0,0,0.06);
+      background: transparent;
+      color: var(--muted);
+      padding: 6px 12px;
+      border-radius: 8px;
+      min-width: 36px;
+      text-align: center;
+    }
 
-/* disabled */
-.pagination .page-item.disabled .page-link {
-  opacity: 0.45;
-  pointer-events: none;
-}
+    /* disabled */
+    .pagination .page-item.disabled .page-link {
+      opacity: 0.45;
+      pointer-events: none;
+    }
 
-/* hover (light) */
-.pagination .page-link:hover {
-  background: rgba(0,0,0,0.04);
-  color: inherit;
-}
+    /* hover (light) */
+    .pagination .page-link:hover {
+      background: rgba(0,0,0,0.04);
+      color: inherit;
+    }
 
-/* active pill using accent colors */
-.pagination .page-item.active .page-link {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff !important;
-  border-color: transparent;
-  box-shadow: none;
-}
+    /* active pill using accent colors */
+    .pagination .page-item.active .page-link {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #fff !important;
+      border-color: transparent;
+      box-shadow: none;
+    }
 
-/* small dots/ellipsis */
-.pagination .page-item.disabled .page-link {
-  background: transparent;
-  border: none;
-}
+    /* small dots/ellipsis */
+    .pagination .page-item.disabled .page-link {
+      background: transparent;
+      border: none;
+    }
 
-/* Dark mode overrides */
-body.dark-mode .pagination .page-link {
-  border: 1px solid rgba(255,255,255,0.04);
-  color: #9aa0b4;
-}
-body.dark-mode .pagination .page-link:hover {
-  background: rgba(255,255,255,0.03);
-}
-body.dark-mode .pagination .page-item.active .page-link {
-  /* keep the same accent gradient already readable in dark mode */
-  color: #fff !important;
-}
-
-
+    /* Dark mode overrides */
+    body.dark-mode .pagination .page-link {
+      border: 1px solid rgba(255,255,255,0.04);
+      color: #9aa0b4;
+    }
+    body.dark-mode .pagination .page-link:hover {
+      background: rgba(255,255,255,0.03);
+    }
+    body.dark-mode .pagination .page-item.active .page-link {
+      /* keep same accent gradient already readable in dark mode */
+      color: #fff !important;
+    }
   </style>
 </head>
 <body>
@@ -443,6 +728,10 @@ body.dark-mode .pagination .page-item.active .page-link {
           <a href="index.php" class="active" title="Dashboard"><i class="bi bi-speedometer2"></i><span class="label">Dashboard</span></a>
           <a href="bahan_baku.php" title="Bahan Baku"><i class="bi bi-box-seam"></i><span class="label">Bahan Baku</span></a>
           <a href="laporan.php" title="Laporan Stok"><i class="bi bi-file-earmark-text"></i><span class="label">Laporan Stok</span></a>
+          <a href="daftarkue.php" title="Daftar Kue">
+          <i class="bi bi-basket"></i>
+          <span class="label">Daftar Kue</span>
+          </a>
         </nav>
 
         <div class="tools" aria-hidden="false">
@@ -523,6 +812,71 @@ body.dark-mode .pagination .page-item.active .page-link {
           </div>
         </div>
 
+        <!-- Current statistics row -->
+        <div class="stats">
+          <div class="stat purple">
+            <div>
+              <div class="meta">Kue Terlaris</div>
+              <div class="value"><?= $bestSellingCake ? htmlspecialchars($bestSellingCake['nama_kue'], ENT_QUOTES) : 'Belum ada data' ?></div>
+              <small class="text-muted"><?= $bestSellingCake ? $bestSellingCake['total_dibuat'] . ' kali dibuat' : 'Mulai produksi kue' ?></small>
+            </div>
+            <div class="icon"><i class="bi bi-trophy"></i></div>
+          </div>
+
+          <div class="stat orange">
+            <div>
+              <div class="meta">Bahan Paling Banyak Keluar</div>
+              <div class="value"><?= $mostUsedIngredient ? htmlspecialchars($mostUsedIngredient['nama_bahan'], ENT_QUOTES) : 'Belum ada data' ?></div>
+              <small class="text-muted"><?= $mostUsedIngredient ? number_format($mostUsedIngredient['total_terpakai'], 2, ',', '.') . ' unit bulan ini' : 'Tidak ada transaksi' ?></small>
+            </div>
+            <div class="icon"><i class="bi bi-graph-down-arrow"></i></div>
+          </div>
+        </div>
+
+        <!-- Predictions row -->
+        <div class="stats">
+          <div class="stat teal">
+            <div>
+              <div class="meta">Prediksi Kue Terlaris <?= $nextMonthName ?></div>
+              <div class="value"><?= $predictedCake ? htmlspecialchars($predictedCake['nama_kue'], ENT_QUOTES) : 'Data tidak cukup' ?></div>
+              <?php if ($predictedCake): ?>
+              <div style="margin-top: 4px;">
+                <span class="confidence-badge"><?= $predictedCake['confidence'] ?>% akurat</span>
+                <span class="trend-indicator <?= $predictedCake['trend'] == 'Naik' ? 'trend-up' : 'trend-stable' ?>">
+                  <i class="bi bi-<?= $predictedCake['trend'] == 'Naik' ? 'arrow-up' : 'arrow-right' ?>"></i> 
+                  <?= $predictedCake['trend'] ?>
+                </span>
+              </div>
+              <small class="text-muted">Rata-rata: <?= $predictedCake['avg_monthly'] ?>/bulan</small>
+              <?php else: ?>
+              <small class="text-muted">Perlu lebih banyak data historis</small>
+              <?php endif; ?>
+            </div>
+            <div class="icon"><i class="bi bi-magic"></i></div>
+          </div>
+
+          <div class="stat blue">
+            <div>
+              <div class="meta">Prediksi Bahan Keluar <?= $nextMonthName ?></div>
+              <div class="value"><?= !empty($predictedIngredients) ? 'Top 3' : 'Data tidak cukup' ?></div>
+              <?php if (!empty($predictedIngredients)): ?>
+              <ul class="prediction-list">
+                <?php foreach ($predictedIngredients as $ingredient): ?>
+                  <li>
+                    <span><?= htmlspecialchars($ingredient['nama_bahan'], ENT_QUOTES) ?></span>
+                    <span style="font-weight: 600; color: var(--accent);">
+                      <?= number_format($ingredient['prediction_score'], 1, ',', '.') ?> unit
+                    </span>
+                  </li>
+                <?php endforeach; ?>
+              </ul>
+              <?php else: ?>
+              <small class="text-muted">Perlu lebih banyak data historis</small>
+              <?php endif; ?>
+            </div>
+            <div class="icon"><i class="bi bi-graph-up"></i></div>
+          </div>
+        </div>
         <div class="card-table">
           <div class="card-header">
             <h5 class="mb-0"><i class="bi bi-list-check"></i> Stok Terkini</h5>

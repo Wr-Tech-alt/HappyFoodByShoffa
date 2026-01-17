@@ -1,7 +1,7 @@
 <?php
 class Database {
     private $host = 'localhost';
-    private $dbname = 'happyfood_inventory';
+    private $dbname = 'preset';
     private $username = 'root';
     private $password = '';
     private $conn;
